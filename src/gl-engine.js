@@ -48,7 +48,8 @@ export class GLEngine {
     const gl = canvas.getContext('webgl2', {
       antialias: false,
       alpha: false,
-      preserveDrawingBuffer: false,
+      preserveDrawingBuffer: true,
+      powerPreference: 'low-power',
     });
     if (!gl) {
       throw new Error('WebGL2 is not supported in this browser.');
@@ -72,9 +73,13 @@ export class GLEngine {
     this.fboHeight = 0;
 
     this.paused = false;
+    this.needsRedraw = true;
+    this.renderScale = 0.75;
+    this.maxFps = 30;
     this.elapsed = 0;
     this.frameCount = 0;
     this.lastFrameTime = null;
+    this.lastRenderTime = 0;
     this.rafId = null;
     this.onBeforeFrame = null;
 
@@ -181,6 +186,7 @@ export class GLEngine {
     this.mode = 'single';
     this.program = createProgram(this.gl, VERTEX_SHADER_SRC, fsSource);
     this._bindQuadAttrib(this.program);
+    this.needsRedraw = true;
   }
 
   loadPingPongShaders(simSource, displaySource) {
@@ -191,11 +197,13 @@ export class GLEngine {
     this._bindQuadAttrib(this.simProgram);
     this._bindQuadAttrib(this.displayProgram);
     this._ensureFBOs();
+    this.needsRedraw = true;
   }
 
   resetSimulation() {
     this.frameCount = 0;
     this.elapsed = 0;
+    this.needsRedraw = true;
     if (this.mode !== 'pingpong') return;
     const gl = this.gl;
     for (const target of this.fbos) {
@@ -209,16 +217,29 @@ export class GLEngine {
 
   setUniform(name, value) {
     this.uniformValues[name] = value;
+    this.needsRedraw = true;
+  }
+
+  setRenderScale(scale) {
+    this.renderScale = Math.max(0.25, Math.min(2.0, scale));
+    this.resize();
+    this.needsRedraw = true;
+  }
+
+  setMaxFps(fps) {
+    this.maxFps = fps;
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
-    const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 1.0);
+    const scale = baseDpr * this.renderScale;
+    const width = Math.max(1, Math.floor(this.canvas.clientWidth * scale));
+    const height = Math.max(1, Math.floor(this.canvas.clientHeight * scale));
     if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
       this.gl.viewport(0, 0, width, height);
+      this.needsRedraw = true;
     }
   }
 
@@ -314,11 +335,31 @@ export class GLEngine {
   start() {
     if (this.rafId !== null) return;
     const tick = (now) => {
+      this.rafId = requestAnimationFrame(tick);
+
+      if (document.hidden) {
+        this.lastFrameTime = now;
+        return;
+      }
+
+      if (this.paused && !this.needsRedraw) {
+        this.lastFrameTime = now;
+        return;
+      }
+
+      if (!this.paused && this.maxFps > 0) {
+        const minInterval = 1000 / this.maxFps;
+        if (now - this.lastRenderTime < minInterval) {
+          return;
+        }
+      }
+
       if (this.lastFrameTime === null) {
         this.lastFrameTime = now;
       }
       const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
       this.lastFrameTime = now;
+      this.lastRenderTime = now;
 
       if (!this.paused) {
         this.elapsed += dt;
@@ -326,14 +367,18 @@ export class GLEngine {
           this.onBeforeFrame(this.elapsed, dt);
         }
       }
+      this.needsRedraw = false;
       this.renderFrame();
-      this.rafId = requestAnimationFrame(tick);
     };
     this.rafId = requestAnimationFrame(tick);
   }
 
   setPaused(paused) {
     this.paused = paused;
+    if (!paused) {
+      this.lastFrameTime = null;
+      this.needsRedraw = true;
+    }
   }
 
   resetTime() {
