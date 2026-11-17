@@ -2,7 +2,7 @@ import { COMMON_GLSL } from './common.glsl.js';
 
 export const zebraRunwayStudy = {
   id: 'zebra-runway',
-  name: 'Study B — Runway Zebra',
+  name: 'Runway Zebra',
   description:
     'Fast-moving kinetic zebra isolines with directional brush-stroke color diffs and a sweeping tritone gradient.',
   params: [
