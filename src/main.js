@@ -2,8 +2,9 @@ import { GLEngine } from './gl-engine.js';
 import { PALETTES } from './palettes.js';
 import { watercolorStudy } from './shaders/watercolor.js';
 import { zebraRunwayStudy } from './shaders/zebra-runway.js';
+import { fractalPrngStudy } from './shaders/fractal-prng.js';
 
-const STUDIES = [watercolorStudy, zebraRunwayStudy];
+const STUDIES = [fractalPrngStudy, watercolorStudy, zebraRunwayStudy];
 
 const canvas = document.getElementById('gl-canvas');
 const hud = document.getElementById('hud');
