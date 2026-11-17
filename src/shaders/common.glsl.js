@@ -124,6 +124,21 @@ float prngFbm(vec2 p, uint seed) {
   return value / norm;
 }
 
+// Lightweight 3-octave rotated PRNG fBm in [0, 1] for lower GPU load
+float prngFbm3(vec2 p, uint seed) {
+  float value = 0.0;
+  float amp = 0.5;
+  float norm = 0.0;
+  mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);
+  for (int i = 0; i < 3; i++) {
+    value += amp * prngNoise(p, seed + uint(i) * 1013u);
+    norm += amp;
+    p = rot * p * 2.02 + vec2(13.7, 29.3);
+    amp *= 0.5;
+  }
+  return value / norm;
+}
+
 // Seeded cosine gradient palette
 vec3 seededCosinePalette(float t, uint seed) {
   vec3 r0 = prng3f(seed + 17u);
