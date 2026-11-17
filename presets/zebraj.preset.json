@@ -1,0 +1,18 @@
+{
+  "name": "zebraj",
+  "studyId": "zebra-runway",
+  "palette": "archival",
+  "gradient": "iridescent_oil",
+  "perf": "balanced",
+  "seed": 99.68707188211515,
+  "params": {
+    "u_speed": 0.65,
+    "u_scale": 3.6,
+    "u_brushDiff": 0.08,
+    "u_contrast": 0.38,
+    "u_grain": 0.14
+  },
+  "pigments": [],
+  "slug": "zebraj",
+  "updatedAt": "2026-11-17T20:23:35.657Z"
+}
