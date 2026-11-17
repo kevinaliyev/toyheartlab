@@ -17,19 +17,19 @@
 
     <div class="hud-body">
       <div class="control-group">
-        <label for="study-select">Study</label>
+        <label for="study-select">Shader</label>
         <select id="study-select"></select>
       </div>
 
       <p id="study-desc" class="study-desc"></p>
 
-      <div class="control-group">
-        <label for="palette-select">Paper / Tritone</label>
+      <div id="palette-group" class="control-group">
+        <label for="palette-select">Base / Tritone</label>
         <select id="palette-select"></select>
       </div>
 
-      <div class="control-group">
-        <label for="gradient-select">Fractal Gradient</label>
+      <div id="gradient-group" class="control-group" hidden>
+        <label for="gradient-select">Colour Gradient</label>
         <select id="gradient-select"></select>
       </div>
 
@@ -45,9 +45,40 @@
       <div id="params-container" class="params-container"></div>
 
       <div class="actions">
-        <button id="pause-btn" type="button">Pause</button>
+        <button id="pause-btn" type="button">Play</button>
         <button id="reseed-btn" type="button">Re-seed</button>
       </div>
+
+      <details class="builder-details">
+        <summary>Presets &amp; Export</summary>
+        <div class="builder-section">
+          <div class="builder-row">
+            <input id="preset-name" type="text" placeholder="Preset name..." />
+            <button id="save-preset-btn" type="button">Save</button>
+          </div>
+          <div class="builder-row">
+            <select id="preset-select">
+              <option value="">-- Saved presets --</option>
+            </select>
+            <button id="load-preset-btn" type="button">Load</button>
+            <button id="del-preset-btn" type="button">Del</button>
+          </div>
+          <div class="actions">
+            <button id="download-preset-btn" type="button">Save .json</button>
+            <button id="import-preset-btn" type="button">Load .json</button>
+            <input id="import-preset-file" type="file" accept=".json" hidden />
+          </div>
+        </div>
+
+        <div class="builder-section">
+          <div class="builder-title">Export Shader Object</div>
+          <div class="actions">
+            <button id="export-shader-btn" type="button">Export .js</button>
+            <button id="copy-shader-btn" type="button">Copy JSON</button>
+          </div>
+          <div id="builder-status" class="builder-status"></div>
+        </div>
+      </details>
     </div>
   </aside>
 
