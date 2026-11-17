@@ -1,0 +1,351 @@
+const VERTEX_SHADER_SRC = `#version 300 es
+in vec2 a_position;
+out vec2 v_uv;
+
+void main() {
+  v_uv = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`;
+
+function compileShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const info = gl.getShaderInfoLog(shader);
+    gl.deleteShader(shader);
+    throw new Error(`Shader compile error:\n${info}`);
+  }
+  return shader;
+}
+
+function createProgram(gl, vsSource, fsSource) {
+  const vs = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`Program link error:\n${info}`);
+  }
+  return program;
+}
+
+/**
+ * Minimal WebGL2 fullscreen-quad shader engine.
+ * Supports both single-pass fragment shaders and two-pass ping-pong FBO simulations.
+ */
+export class GLEngine {
+  constructor(canvas) {
+    this.canvas = canvas;
+    const gl = canvas.getContext('webgl2', {
+      antialias: false,
+      alpha: false,
+      preserveDrawingBuffer: false,
+    });
+    if (!gl) {
+      throw new Error('WebGL2 is not supported in this browser.');
+    }
+    this.gl = gl;
+    this.hasFloatFBO = Boolean(
+      gl.getExtension('EXT_color_buffer_float') ||
+      gl.getExtension('EXT_color_buffer_half_float')
+    );
+
+    this.mode = 'single'; // 'single' | 'pingpong'
+    this.program = null;
+    this.simProgram = null;
+    this.displayProgram = null;
+    this.uniformLocations = new Map();
+    this.uniformValues = {};
+
+    this.fbos = [null, null];
+    this.fboIndex = 0;
+    this.fboWidth = 0;
+    this.fboHeight = 0;
+
+    this.paused = false;
+    this.elapsed = 0;
+    this.frameCount = 0;
+    this.lastFrameTime = null;
+    this.rafId = null;
+    this.onBeforeFrame = null;
+
+    this._initQuad();
+    this.resize();
+  }
+
+  _initQuad() {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+
+    this.vao = vao;
+    this.vbo = buffer;
+  }
+
+  _bindQuadAttrib(program) {
+    const gl = this.gl;
+    gl.bindVertexArray(this.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+    const posLoc = gl.getAttribLocation(program, 'a_position');
+    if (posLoc >= 0) {
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+    }
+  }
+
+  _clearPrograms() {
+    const gl = this.gl;
+    if (this.program) gl.deleteProgram(this.program);
+    if (this.simProgram) gl.deleteProgram(this.simProgram);
+    if (this.displayProgram) gl.deleteProgram(this.displayProgram);
+    this.program = null;
+    this.simProgram = null;
+    this.displayProgram = null;
+    this.uniformLocations.clear();
+  }
+
+  _destroyFBOs() {
+    const gl = this.gl;
+    for (let i = 0; i < 2; i++) {
+      if (this.fbos[i]) {
+        gl.deleteFramebuffer(this.fbos[i].fbo);
+        gl.deleteTexture(this.fbos[i].tex);
+        this.fbos[i] = null;
+      }
+    }
+    this.fboWidth = 0;
+    this.fboHeight = 0;
+  }
+
+  _createFBO(width, height) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+
+    if (this.hasFloatFBO) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    }
+
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    return { fbo, tex };
+  }
+
+  _ensureFBOs() {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (this.fbos[0] && this.fboWidth === w && this.fboHeight === h) {
+      return;
+    }
+    this._destroyFBOs();
+    this.fbos[0] = this._createFBO(w, h);
+    this.fbos[1] = this._createFBO(w, h);
+    this.fboWidth = w;
+    this.fboHeight = h;
+    this.fboIndex = 0;
+    this.frameCount = 0;
+  }
+
+  loadFragmentShader(fsSource) {
+    this._clearPrograms();
+    this._destroyFBOs();
+    this.mode = 'single';
+    this.program = createProgram(this.gl, VERTEX_SHADER_SRC, fsSource);
+    this._bindQuadAttrib(this.program);
+  }
+
+  loadPingPongShaders(simSource, displaySource) {
+    this._clearPrograms();
+    this.mode = 'pingpong';
+    this.simProgram = createProgram(this.gl, VERTEX_SHADER_SRC, simSource);
+    this.displayProgram = createProgram(this.gl, VERTEX_SHADER_SRC, displaySource);
+    this._bindQuadAttrib(this.simProgram);
+    this._bindQuadAttrib(this.displayProgram);
+    this._ensureFBOs();
+  }
+
+  resetSimulation() {
+    this.frameCount = 0;
+    this.elapsed = 0;
+    if (this.mode !== 'pingpong') return;
+    const gl = this.gl;
+    for (const target of this.fbos) {
+      if (!target) continue;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  setUniform(name, value) {
+    this.uniformValues[name] = value;
+  }
+
+  resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
+    const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
+    if (this.canvas.width !== width || this.canvas.height !== height) {
+      this.canvas.width = width;
+      this.canvas.height = height;
+      this.gl.viewport(0, 0, width, height);
+    }
+  }
+
+  _bindUniform(program, name, value) {
+    const gl = this.gl;
+    const cacheKey = `${program === this.simProgram ? 'sim' : program === this.displayProgram ? 'disp' : 'main'}:${name}`;
+    let loc = this.uniformLocations.get(cacheKey);
+    if (loc === undefined) {
+      loc = gl.getUniformLocation(program, name);
+      this.uniformLocations.set(cacheKey, loc);
+    }
+    if (loc === null) return;
+
+    if (typeof value === 'number') {
+      gl.uniform1f(loc, value);
+    } else if (Array.isArray(value)) {
+      if (value.length === 2) gl.uniform2f(loc, value[0], value[1]);
+      else if (value.length === 3) gl.uniform3f(loc, value[0], value[1], value[2]);
+      else if (value.length === 4) gl.uniform4f(loc, value[0], value[1], value[2], value[3]);
+    }
+  }
+
+  _bindAllUniforms(program) {
+    this._bindUniform(program, 'u_time', this.elapsed);
+    this._bindUniform(program, 'u_frame', this.frameCount);
+    this._bindUniform(program, 'u_resolution', [this.canvas.width, this.canvas.height]);
+
+    for (const [name, value] of Object.entries(this.uniformValues)) {
+      this._bindUniform(program, name, value);
+    }
+  }
+
+  renderFrame() {
+    const gl = this.gl;
+    this.resize();
+
+    if (this.mode === 'single') {
+      if (!this.program) return;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      gl.useProgram(this.program);
+      gl.bindVertexArray(this.vao);
+      this._bindAllUniforms(this.program);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      return;
+    }
+
+    if (!this.simProgram || !this.displayProgram) return;
+    this._ensureFBOs();
+
+    const readTarget = this.fbos[this.fboIndex];
+    const writeTarget = this.fbos[1 - this.fboIndex];
+
+    // 1. Simulation pass (only advance if not paused, or on frame 0)
+    if (!this.paused || this.frameCount === 0) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, writeTarget.fbo);
+      gl.viewport(0, 0, this.fboWidth, this.fboHeight);
+      gl.useProgram(this.simProgram);
+      gl.bindVertexArray(this.vao);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, readTarget.tex);
+      const prevLoc = gl.getUniformLocation(this.simProgram, 'u_prevTex');
+      if (prevLoc !== null) gl.uniform1i(prevLoc, 0);
+
+      this._bindAllUniforms(this.simProgram);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+      this.fboIndex = 1 - this.fboIndex;
+      this.frameCount += 1;
+    }
+
+    // 2. Display pass (renders latest FBO to screen)
+    const latestTarget = this.fbos[this.fboIndex];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.useProgram(this.displayProgram);
+    gl.bindVertexArray(this.vao);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, latestTarget.tex);
+    const simLoc = gl.getUniformLocation(this.displayProgram, 'u_simTex');
+    if (simLoc !== null) gl.uniform1i(simLoc, 0);
+
+    this._bindAllUniforms(this.displayProgram);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  setFrameHook(fn) {
+    this.onBeforeFrame = fn;
+  }
+
+  start() {
+    if (this.rafId !== null) return;
+    const tick = (now) => {
+      if (this.lastFrameTime === null) {
+        this.lastFrameTime = now;
+      }
+      const dt = Math.min((now - this.lastFrameTime) / 1000, 0.1);
+      this.lastFrameTime = now;
+
+      if (!this.paused) {
+        this.elapsed += dt;
+        if (this.onBeforeFrame) {
+          this.onBeforeFrame(this.elapsed, dt);
+        }
+      }
+      this.renderFrame();
+      this.rafId = requestAnimationFrame(tick);
+    };
+    this.rafId = requestAnimationFrame(tick);
+  }
+
+  setPaused(paused) {
+    this.paused = paused;
+  }
+
+  resetTime() {
+    this.elapsed = 0;
+  }
+
+  destroy() {
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    this._clearPrograms();
+    this._destroyFBOs();
+  }
+}

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toyheart — Procedural Shader &amp; Visual Study Plan</title>
+  <style>
+    :root {
+      --bg: #f4f2ed;
+      --surface: #fbfaf7;
+      --ink: #111111;
+      --mid: #5e5e5e;
+      --line: #d6d2c8;
+      --accent: #000000;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 3rem 1.5rem 5rem;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 2px solid var(--ink);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .eyebrow {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--mid);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      line-height: 1.1;
+      margin: 0 0 0.75rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .lead {
+      font-size: 1.05rem;
+      color: var(--mid);
+      margin: 0;
+      max-width: 65ch;
+    }
+
+    section {
+      margin-bottom: 2.75rem;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      letter-spacing: -0.01em;
+      margin: 0 0 1rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin: 0 0 0.4rem;
+    }
+
+    p {
+      margin: 0 0 1rem;
+    }
+
+    ul, ol {
+      margin: 0 0 1rem;
+      padding-left: 1.25rem;
+    }
+
+    li {
+      margin-bottom: 0.45rem;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      background: rgba(0, 0, 0, 0.06);
+      padding: 0.12em 0.38em;
+      border-radius: 3px;
+    }
+
+    pre {
+      background: var(--ink);
+      color: #f4f2ed;
+      padding: 1rem 1.2rem;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      margin: 0 0 1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 1.25rem 1.35rem;
+      border-radius: 4px;
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border: 1px solid var(--ink);
+      padding: 0.15rem 0.45rem;
+      margin-bottom: 0.65rem;
+    }
+
+    .swatches {
+      display: flex;
+      gap: 0.75rem;
+      margin: 0.75rem 0 1rem;
+    }
+
+    .swatch {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.78rem;
+    }
+
+    .swatch-box {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--ink);
+    }
+
+    .questions {
+      background: var(--surface);
+      border-left: 3px solid var(--ink);
+      padding: 1rem 1.25rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Toyheart / Technical &amp; Aesthetic Plan</div>
+      <h1>Procedural Tritone Shaders &amp; Zero-Bloat Canvas</h1>
+      <p class="lead">
+        A minimal, dependency-free architecture for rendering real-time procedural shaders,
+        brush-stroke textures, and future 2D/3D/video experiments before adding any application logic.
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Stack &amp; Philosophy (Zero Bloat)</h2>
+      <p>
+        No frameworks, no bundlers, no <code>node_modules</code>. Everything runs directly in the browser using native web platform APIs:
+      </p>
+      <ul>
+        <li><strong>HTML5 + CSS3</strong> — Minimal viewport shell (<code>100vw × 100vh</code> canvas) with a discreet floating control bar to switch studies and tweak parameters.</li>
+        <li><strong>Vanilla ES Modules (<code>&lt;script type="module"&gt;</code>)</strong> — Clean separation of engine code and shader code without needing Webpack or Vite.</li>
+        <li><strong>WebGL2 + GLSL (Fragment Shaders)</strong> — GPU-accelerated pixel/procedural generation at 60fps. Ideal for noise fields, gradients, brush-stroke distortion, and fluid/paint bleed.</li>
+        <li><strong>Future-Ready Hooks</strong> — The same canvas/module setup can later ingest <code>&lt;video&gt;</code> elements as WebGL textures (<code>texImage2D</code>) or drop in <strong>Three.js</strong> via a single CDN import map if 3D meshes are needed.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>2. Core Procedural Toolkit</h2>
+      <p>Both visual studies share a small set of GPU building blocks written in GLSL:</p>
+      <ul>
+        <li><strong>Fullscreen Quad Pipeline</strong> — A tiny WebGL2 wrapper (~100 lines) passing <code>u_time</code>, <code>u_resolution</code>, <code>u_mouse</code>, and <code>u_seed</code> into fragment shaders.</li>
+        <li><strong>Ping-Pong Framebuffers (FBOs)</strong> — Two alternating off-screen textures so frames can feed back into themselves. Essential for paint accumulation, pigment diffusion, and motion trails.</li>
+        <li><strong>Noise &amp; Domain Warping</strong> — Simplex/value noise + Fractal Brownian Motion (fBm), where noise distorts the coordinates of other noise to create organic, sweeping brush-like curves.</li>
+        <li><strong>Anisotropic (Stretched) Noise</strong> — Scaling UV coordinates along a flow direction to simulate bristle streaks and directional brush-stroke color diffs.</li>
+        <li><strong>Tritone &amp; Paper Substrate</strong> — Mapping continuous grayscale/gradient values onto a curated black / grey / white palette with subtle procedural paper fiber grain.</li>
+      </ul>
+      <div class="swatches">
+        <div class="swatch"><span class="swatch-box" style="background:#0c0c0c"></span>#0C0C0C Ink</div>
+        <div class="swatch"><span class="swatch-box" style="background:#787672"></span>#787672 Midtone Grey</div>
+        <div class="swatch"><span class="swatch-box" style="background:#f3f0e8"></span>#F3F0E8 Archival Paper</div>
+        <div class="swatch"><span class="swatch-box" style="background:#f6ebd8"></span>#F6EBD8 Cream</div>
+        <div class="swatch"><span class="swatch-box" style="background:#ffffff"></span>#FFFFFF Gallery White</div>
+      </div>
+      <p>
+        <strong>Abstracted Shader Component &amp; WebGUI:</strong> Each study registers as a self-contained shader component (metadata, uniforms, optional FBO passes, and tunable parameters). A lightweight floating WebGUI lets you swap studies, switch paper/tritone palettes dynamically, adjust speed/contrast/grain, and pause or re-seed.
+      </p>
+    </section>
+
+    <section>
+      <h2>3. The Two Initial Visual Studies</h2>
+      <div class="grid">
+        <article class="card">
+          <span class="tag">Study A — Organic / Accumulative</span>
+          <h3>Watercolour &amp; Sumi-e on Paper</h3>
+          <p>
+            <strong>Feel:</strong> Slow, meditative, tactile. Black and grey washes bloom onto a textured paper/canvas background.
+          </p>
+          <ul>
+            <li><strong>Paper grain:</strong> High-frequency procedural fiber heightmap that modulates where pigment settles.</li>
+            <li><strong>Brush strokes:</strong> Moving ink emitters along curved noise paths with directional bristle streaks.</li>
+            <li><strong>Wet-edge effect:</strong> Darker pigment pooling along the outer boundary of each wash via FBO feedback/diffusion.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <span class="tag">Study B — Kinetic / Editorial</span>
+          <h3>Runway Zebra Noise Gradient</h3>
+          <p>
+            <strong>Feel:</strong> Fast, rhythmic, high-fashion projection. Flowing tritone bands that morph like a living gradient.
+          </p>
+          <ul>
+            <li><strong>Contour isolines:</strong> Domain-warped sine/noise waves creating organic zebra-print ribbons.</li>
+            <li><strong>Brush-stroke diffs:</strong> Fast-moving anisotropic noise perturbing the edges between black, grey, and white bands so transitions feel painted rather than vector-clean.</li>
+            <li><strong>Gradient drift:</strong> Global tonal gradient sweeping across the frame, shifting the density of black vs. white over time.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Proposed File Structure</h2>
+      <pre>toyheart/
+├── plan.html                  # This overview (can be removed later)
+├── index.html                 # Full-bleed canvas + minimal study switcher
+├── styles.css                 # Minimal layout &amp; HUD styling
+└── src/
+    ├── main.js                # Initializes WebGL2, UI controls, animation loop
+    ├── gl-engine.js           # Shader compiler, quad geometry, ping-pong FBOs
+    └── shaders/
+        ├── common.glsl.js     # Noise, fBm, domain warp, paper grain, tritone map
+        ├── watercolor.js      # Study A: accumulative wash &amp; paper bleed
+        └── zebra-runway.js    # Study B: fast kinetic zebra + brush-diff gradient</pre>
+      <p>
+        <em>Note on running locally:</em> Because ES modules require HTTP, we can serve the folder with a one-liner like <code>python -m http.server</code> (or VS Code Live Server), or keep shaders as JS template strings so everything stays cleanly modular.
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Locked-In Decisions &amp; Roadmap</h2>
+      <div class="questions">
+        <ol>
+          <li><strong>Dynamic Palettes:</strong> Support swapping between <em>Cream</em>, <em>Warm Archival Paper</em>, and <em>Gallery White</em> live in the WebGUI via tritone color uniforms.</li>
+          <li><strong>Motion Mode:</strong> Autonomous ambient generation for now; cursor/scroll interactivity will be added in a later pass by wiring <code>u_mouse</code> / <code>u_scroll</code> into the shader uniforms.</li>
+          <li><strong>Build Order:</strong>
+            <ul>
+              <li><strong>Phase 1 (Now):</strong> Minimal WebGL2 engine + abstracted shader registry + WebGUI + <strong>Study B (Runway Zebra Noise Gradient)</strong>.</li>
+              <li><strong>Phase 2 (Next):</strong> Ping-pong FBO support in the engine + <strong>Study A (Watercolour &amp; Sumi-e on Paper)</strong>.</li>
+              <li><strong>Phase 3 (Future):</strong> Cursor/scroll interactivity, <code>&lt;video&gt;</code> texture input, or Three.js 3D layer.</li>
+            </ul>
+          </li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

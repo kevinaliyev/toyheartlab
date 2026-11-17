@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toyheart — Procedural Shader Studies</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <canvas id="gl-canvas"></canvas>
+
+  <aside id="hud" class="hud">
+    <div class="hud-bar">
+      <span class="hud-title">Toyheart // Lab</span>
+      <button id="toggle-hud" type="button">Hide (H)</button>
+    </div>
+
+    <div class="hud-body">
+      <div class="control-group">
+        <label for="study-select">Study</label>
+        <select id="study-select"></select>
+      </div>
+
+      <p id="study-desc" class="study-desc"></p>
+
+      <div class="control-group">
+        <label for="palette-select">Paper / Tritone</label>
+        <select id="palette-select"></select>
+      </div>
+
+      <div id="params-container" class="params-container"></div>
+
+      <div class="actions">
+        <button id="pause-btn" type="button">Pause</button>
+        <button id="reseed-btn" type="button">Re-seed</button>
+      </div>
+    </div>
+  </aside>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
