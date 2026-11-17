@@ -2,7 +2,9 @@ import { COMMON_GLSL } from './common.glsl.js';
 
 export const fractalPrngStudy = {
   id: 'fractal-prng',
-  name: 'Study C — Seeded Fractal',
+  name: 'Seeded Fractal',
+  usesTritone: false,
+  usesGradient: true,
   description:
     'Animated Julia & Mandelbrot fractals with 2D PCG PRNG noise, colour seeding, exclusive zoom presets, and optional preset stacking.',
   params: [
