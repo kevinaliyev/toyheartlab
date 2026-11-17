@@ -1,22 +1,49 @@
 import { GLEngine } from './gl-engine.js';
 import { PALETTES, GRADIENTS } from './palettes.js';
+import {
+  loadSavedPresets,
+  syncPresetsFromDisk,
+  savePreset,
+  deletePreset,
+  saveExportToDiskOrDownload,
+  downloadTextFile,
+} from './preset-store.js';
+import { buildShaderObject, serializeShaderModule } from './shader-exporter.js';
 import { watercolorStudy } from './shaders/watercolor.js';
 import { zebraRunwayStudy } from './shaders/zebra-runway.js';
 import { fractalPrngStudy } from './shaders/fractal-prng.js';
+import { fluidAdvectStudy } from './shaders/fluid-advect.js';
 
-const STUDIES = [fractalPrngStudy, watercolorStudy, zebraRunwayStudy];
+const STUDIES = [watercolorStudy, zebraRunwayStudy, fractalPrngStudy, fluidAdvectStudy];
 
 const canvas = document.getElementById('gl-canvas');
 const hud = document.getElementById('hud');
 const toggleHudBtn = document.getElementById('toggle-hud');
 const studySelect = document.getElementById('study-select');
+const paletteGroup = document.getElementById('palette-group');
 const paletteSelect = document.getElementById('palette-select');
+const gradientGroup = document.getElementById('gradient-group');
 const gradientSelect = document.getElementById('gradient-select');
 const perfSelect = document.getElementById('perf-select');
 const paramsContainer = document.getElementById('params-container');
 const pauseBtn = document.getElementById('pause-btn');
 const reseedBtn = document.getElementById('reseed-btn');
 const studyDesc = document.getElementById('study-desc');
+const presetNameInput = document.getElementById('preset-name');
+const savePresetBtn = document.getElementById('save-preset-btn');
+const presetSelect = document.getElementById('preset-select');
+const loadPresetBtn = document.getElementById('load-preset-btn');
+const delPresetBtn = document.getElementById('del-preset-btn');
+const downloadPresetBtn = document.getElementById('download-preset-btn');
+const importPresetBtn = document.getElementById('import-preset-btn');
+const importPresetFile = document.getElementById('import-preset-file');
+const exportShaderBtn = document.getElementById('export-shader-btn');
+const copyShaderBtn = document.getElementById('copy-shader-btn');
+const builderStatus = document.getElementById('builder-status');
+
+function setStatus(msg) {
+  builderStatus.textContent = msg;
+}
 
 const engine = new GLEngine(canvas);
 let activeStudy = STUDIES[0];
@@ -82,12 +109,25 @@ function renderPigmentPickers(container) {
   container.appendChild(grid);
 }
 
-function loadStudy(studyId) {
+function loadStudy(studyId, overrides = null) {
   const found = STUDIES.find((s) => s.id === studyId);
   if (!found) return;
   activeStudy = found;
   activeParams = {};
+  studySelect.value = found.id;
   studyDesc.textContent = activeStudy.description;
+  paletteGroup.hidden = activeStudy.usesTritone === false;
+  gradientGroup.hidden = !activeStudy.usesGradient;
+
+  if (overrides?.seed !== undefined) seed = overrides.seed;
+  if (overrides?.palette && PALETTES[overrides.palette]) paletteSelect.value = overrides.palette;
+  if (overrides?.gradient && GRADIENTS[overrides.gradient]) gradientSelect.value = overrides.gradient;
+  if (overrides?.perf && PERF_PRESETS[overrides.perf]) {
+    perfSelect.value = overrides.perf;
+    const preset = PERF_PRESETS[overrides.perf];
+    engine.setRenderScale(preset.scale);
+    engine.setMaxFps(preset.fps);
+  }
 
   if (activeStudy.mode === 'pingpong') {
     engine.loadPingPongShaders(activeStudy.simShader, activeStudy.displayShader);
@@ -115,7 +155,8 @@ function loadStudy(studyId) {
   for (const param of activeStudy.params) {
     const isToggle = param.type === 'toggle';
     const isSelect = param.type === 'select';
-    const initialVal = isToggle ? (param.default ? 1 : 0) : param.default;
+    const rawVal = overrides?.params?.[param.key] ?? param.default;
+    const initialVal = isToggle ? (rawVal ? 1 : 0) : rawVal;
     activeParams[param.key] = initialVal;
     engine.setUniform(param.key, initialVal);
 
@@ -129,7 +170,7 @@ function loadStudy(studyId) {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.className = 'param-toggle';
-      input.checked = Boolean(param.default);
+      input.checked = Boolean(initialVal);
 
       input.addEventListener('change', () => {
         const val = input.checked ? 1 : 0;
@@ -151,7 +192,7 @@ function loadStudy(studyId) {
         const opt = document.createElement('option');
         opt.value = String(optDef.value);
         opt.textContent = optDef.label;
-        if (optDef.value === param.default) opt.selected = true;
+        if (optDef.value === initialVal) opt.selected = true;
         select.appendChild(opt);
       }
 
@@ -172,7 +213,7 @@ function loadStudy(studyId) {
       const valSpan = document.createElement('span');
       valSpan.className = 'param-val';
       valSpan.textContent =
-        param.step >= 1 ? String(param.default) : Number(param.default).toFixed(2);
+        param.step >= 1 ? String(initialVal) : Number(initialVal).toFixed(2);
 
       header.append(nameSpan, valSpan);
 
@@ -181,7 +222,7 @@ function loadStudy(studyId) {
       input.min = param.min;
       input.max = param.max;
       input.step = param.step;
-      input.value = param.default;
+      input.value = initialVal;
 
       input.addEventListener('input', () => {
         const val = parseFloat(input.value);
@@ -201,7 +242,10 @@ function loadStudy(studyId) {
   }
 
   if (activeStudy.pigmentScale) {
-    pigmentHexes = activeStudy.pigmentScale.defaults.map((d) => d.hex);
+    pigmentHexes =
+      Array.isArray(overrides?.pigments) && overrides.pigments.length > 0
+        ? [...overrides.pigments]
+        : activeStudy.pigmentScale.defaults.map((d) => d.hex);
     paramsContainer.appendChild(pigmentContainer);
     renderPigmentPickers(pigmentContainer);
   }
@@ -256,6 +300,130 @@ reseedBtn.addEventListener('click', () => {
   engine.resetSimulation();
 });
 
+function getCurrentSnapshot(name) {
+  return {
+    name: name || `${activeStudy.id}-preset`,
+    studyId: activeStudy.id,
+    palette: paletteSelect.value,
+    gradient: gradientSelect.value,
+    perf: perfSelect.value,
+    seed,
+    params: { ...activeParams },
+    pigments: activeStudy.pigmentScale ? [...pigmentHexes] : [],
+  };
+}
+
+function refreshPresetDropdown(selectedName = '') {
+  const presets = loadSavedPresets();
+  presetSelect.innerHTML = '<option value="">-- Saved presets --</option>';
+  for (const key of Object.keys(presets).sort()) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = `${key} (${presets[key].studyId})`;
+    if (key === selectedName) opt.selected = true;
+    presetSelect.appendChild(opt);
+  }
+}
+
+savePresetBtn.addEventListener('click', async () => {
+  const name = presetNameInput.value.trim() || `${activeStudy.id}-${Date.now().toString(36)}`;
+  const { preset, diskFile, renamed } = await savePreset(name, getCurrentSnapshot(name));
+  presetNameInput.value = preset.name;
+  refreshPresetDropdown(preset.name);
+  const suffix = renamed ? ' (deduplicated)' : '';
+  setStatus(diskFile ? `Saved ${diskFile}${suffix}` : `Saved "${preset.name}"${suffix}`);
+});
+
+loadPresetBtn.addEventListener('click', () => {
+  const key = presetSelect.value;
+  if (!key) return;
+  const preset = loadSavedPresets()[key];
+  if (!preset) return;
+  presetNameInput.value = key;
+  loadStudy(preset.studyId, preset);
+  setStatus(`Loaded "${key}"`);
+});
+
+delPresetBtn.addEventListener('click', async () => {
+  const key = presetSelect.value;
+  if (!key) return;
+  await deletePreset(key);
+  refreshPresetDropdown();
+  setStatus(`Deleted "${key}"`);
+});
+
+downloadPresetBtn.addEventListener('click', () => {
+  const name = presetNameInput.value.trim() || `${activeStudy.id}-preset`;
+  const snap = getCurrentSnapshot(name);
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'preset';
+  downloadTextFile(`${slug}.preset.json`, JSON.stringify(snap, null, 2), 'application/json');
+  setStatus(`Downloaded ${slug}.preset.json`);
+});
+
+importPresetBtn.addEventListener('click', () => importPresetFile.click());
+
+importPresetFile.addEventListener('change', async () => {
+  const file = importPresetFile.files?.[0];
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    if (!parsed?.studyId) throw new Error('Missing studyId');
+    const rawName = parsed.name || file.name.replace(/\.preset\.json$|\.json$/i, '');
+    const { preset } = await savePreset(rawName, parsed);
+    presetNameInput.value = preset.name;
+    refreshPresetDropdown(preset.name);
+    loadStudy(parsed.studyId, parsed);
+    setStatus(`Loaded file "${preset.name}"`);
+  } catch (err) {
+    setStatus(`Import failed: ${err.message}`);
+  } finally {
+    importPresetFile.value = '';
+  }
+});
+
+function buildCurrentShaderExport() {
+  const name = presetNameInput.value.trim() || `${activeStudy.id}-shader`;
+  const pigmentUniforms = {};
+  if (activeStudy.pigmentScale) {
+    for (let i = 0; i < 6; i++) {
+      const hex = pigmentHexes[i] || activeStudy.pigmentScale.defaults[i]?.hex || '#333333';
+      pigmentUniforms[`${activeStudy.pigmentScale.uniformPrefix}${i}`] =
+        activeStudy.pigmentScale.toUniform(hex);
+    }
+  }
+  return buildShaderObject({
+    name,
+    study: activeStudy,
+    params: activeParams,
+    palette: PALETTES[paletteSelect.value] || PALETTES.archival,
+    gradient: GRADIENTS[gradientSelect.value] || GRADIENTS.seeded,
+    seed,
+    perf: PERF_PRESETS[perfSelect.value] || PERF_PRESETS.balanced,
+    pigmentUniforms,
+  });
+}
+
+exportShaderBtn.addEventListener('click', async () => {
+  const obj = buildCurrentShaderExport();
+  const slug = obj.id.split(':').pop() || 'shader';
+  const { diskFile } = await saveExportToDiskOrDownload(
+    `${slug}.shader.js`,
+    serializeShaderModule(obj),
+    'application/javascript'
+  );
+  setStatus(diskFile ? `Exported ${diskFile}` : `Downloaded ${slug}.shader.js`);
+});
+
+copyShaderBtn.addEventListener('click', async () => {
+  const obj = buildCurrentShaderExport();
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(obj));
+    setStatus('Copied Shader Object JSON');
+  } catch {
+    setStatus('Clipboard blocked — use Export .js');
+  }
+});
+
 function toggleHud() {
   const collapsed = hud.classList.toggle('collapsed');
   toggleHudBtn.textContent = collapsed ? 'Show GUI (H)' : 'Hide (H)';
@@ -263,6 +431,7 @@ function toggleHud() {
 
 toggleHudBtn.addEventListener('click', toggleHud);
 window.addEventListener('keydown', (e) => {
+  if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
   if (e.key === 'h' || e.key === 'H') {
     toggleHud();
   }
@@ -270,5 +439,12 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('resize', () => engine.resize());
 
+refreshPresetDropdown();
+syncPresetsFromDisk().then(({ diskAvailable }) => {
+  refreshPresetDropdown();
+  if (diskAvailable) setStatus('Disk sync active (presets/ & exports/)');
+});
 loadStudy(activeStudy.id);
+engine.setPaused(true);
+pauseBtn.textContent = 'Play';
 engine.start();
