@@ -28,6 +28,20 @@
         <select id="palette-select"></select>
       </div>
 
+      <div class="control-group">
+        <label for="gradient-select">Fractal Gradient</label>
+        <select id="gradient-select"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="perf-select">GPU Load / FPS</label>
+        <select id="perf-select">
+          <option value="eco">Eco (0.5x · 24 fps)</option>
+          <option value="balanced" selected>Balanced (0.75x · 30 fps)</option>
+          <option value="high">High (1.0x · 60 fps)</option>
+        </select>
+      </div>
+
       <div id="params-container" class="params-container"></div>
 
       <div class="actions">
