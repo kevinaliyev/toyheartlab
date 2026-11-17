@@ -16,7 +16,7 @@ export function hexToAbsorption(hex) {
 
 export const watercolorStudy = {
   id: 'watercolor',
-  name: 'Study A — Watercolour (toyheart)',
+  name: 'Watercolour (toyheart)',
   description:
     'Soft watercolour paintbrushes writing "toyheart" with declarative per-brush pigments, physical colour intersection, and wet fisheye refraction.',
   mode: 'pingpong',
