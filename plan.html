@@ -275,6 +275,39 @@
         </ol>
       </div>
     </section>
+    <section>
+      <h2>6. Live Progress &amp; Builder Roadmap</h2>
+      <div class="grid">
+        <article class="card">
+          <span class="tag">Completed</span>
+          <h3>What We Have Done</h3>
+          <ul>
+            <li><strong>4 Procedural Shaders:</strong> <em>Watercolour (toyheart)</em>, <em>Runway Zebra</em>, <em>Seeded Fractal</em> (32-bit PCG PRNG noise, colour seeding, 12 declarative gradients, exclusive zoom presets + stack override), and <em>Fluid Advection</em> (curl-noise ping-pong FBO dye simulation with liquid sheen).</li>
+            <li><strong>Thermal &amp; GPU Protection:</strong> Capped base DPR, added Eco/Balanced/High render-scale &amp; FPS presets, idle sleep when paused/hidden, and stopped-by-default builder playback.</li>
+            <li><strong>Shader Builder &amp; Local Backend:</strong> Zero-dependency Node server (<code>server.mjs</code> on port <code>8000</code>) with deduplicated disk persistence in <code>presets/</code> and <code>exports/</code>, plus <code>localStorage</code> fallback.</li>
+            <li><strong>Optimized Export &amp; Runtime:</strong> Constant-baked, minified Shader Object exporter (<code>src/shader-exporter.js</code>) and standalone runtime player (<code>src/runtime/toyheart-player.js</code>) with user-agent / reduced-motion context selection.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <span class="tag">In Progress</span>
+          <h3>What We Are Doing</h3>
+          <ul>
+            <li><strong>Builder UX Polish:</strong> Streamlining shader-exclusive controls, collapsible Presets &amp; Export drawer, and clear Base / Shader / Colour Gradient terminology.</li>
+            <li><strong>Preset &amp; Export Authoring:</strong> Building and saving curated presets for fractal and fluid shaders to export into standalone blog/portfolio components.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="questions" style="margin-top: 1rem;">
+        <h3>What Is To Be Done</h3>
+        <ol>
+          <li><strong>Ping-Pong Support in Runtime Player:</strong> Extend <code>src/runtime/toyheart-player.js</code> to run two-pass ping-pong FBO exports (for <em>Fluid Advection</em> and <em>Watercolour</em>) on external sites.</li>
+          <li><strong>Interactive Uniforms:</strong> Wire optional <code>u_mouse</code> and <code>u_scroll</code> hooks for reactive portfolio/blog backgrounds.</li>
+          <li><strong>Portfolio Integration:</strong> Drop exported <code>exports/*.shader.js</code> modules and <code>toyheart-player.js</code> into the target blog/portfolio with <code>pickShaderForContext()</code> rules.</li>
+        </ol>
+      </div>
+    </section>
   </main>
 </body>
 </html>
