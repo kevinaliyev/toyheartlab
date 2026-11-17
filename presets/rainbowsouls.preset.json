@@ -1,0 +1,21 @@
+{
+  "name": "rainbowsouls",
+  "studyId": "fluid-advect",
+  "palette": "archival",
+  "gradient": "iridescent_oil",
+  "perf": "balanced",
+  "seed": 99.68707188211515,
+  "params": {
+    "u_flowSpeed": 1.95,
+    "u_scale": 5,
+    "u_turbulence": 0.3,
+    "u_dissipation": 0.986,
+    "u_emitters": 4,
+    "u_sheen": 0.92,
+    "u_colorSpread": 0.4,
+    "u_colorSeed": 100
+  },
+  "pigments": [],
+  "slug": "rainbowsouls",
+  "updatedAt": "2026-11-17T20:15:00.302Z"
+}
