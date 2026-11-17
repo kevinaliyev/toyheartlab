@@ -69,4 +69,70 @@ vec3 tritoneMap(float t, vec3 dark, vec3 mid, vec3 light, float contrast) {
   col = mix(col, light, highBand);
   return col;
 }
+
+// 32-bit PCG integer hash for deterministic PRNG
+uint pcgHash(uint v) {
+  uint state = v * 747796405u + 2891336453u;
+  uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+
+float prng1f(uint seed) {
+  return float(pcgHash(seed)) * (1.0 / 4294967296.0);
+}
+
+vec3 prng3f(uint seed) {
+  uint h1 = pcgHash(seed);
+  uint h2 = pcgHash(h1);
+  uint h3 = pcgHash(h2);
+  return vec3(h1, h2, h3) * (1.0 / 4294967296.0);
+}
+
+float prng2d(ivec2 p, uint seed) {
+  uint x = uint(p.x) * 374761393u;
+  uint y = uint(p.y) * 668265263u;
+  return prng1f(x ^ y ^ pcgHash(seed));
+}
+
+// Smooth quintic-interpolated 2D PRNG value noise in [0, 1]
+float prngNoise(vec2 p, uint seed) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  ivec2 ip = ivec2(i);
+
+  float a = prng2d(ip, seed);
+  float b = prng2d(ip + ivec2(1, 0), seed);
+  float c = prng2d(ip + ivec2(0, 1), seed);
+  float d = prng2d(ip + ivec2(1, 1), seed);
+
+  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// 5-octave rotated PRNG fBm in [0, 1]
+float prngFbm(vec2 p, uint seed) {
+  float value = 0.0;
+  float amp = 0.5;
+  float norm = 0.0;
+  mat2 rot = mat2(0.80, -0.60, 0.60, 0.80);
+  for (int i = 0; i < 5; i++) {
+    value += amp * prngNoise(p, seed + uint(i) * 1013u);
+    norm += amp;
+    p = rot * p * 2.02 + vec2(13.7, 29.3);
+    amp *= 0.5;
+  }
+  return value / norm;
+}
+
+// Seeded cosine gradient palette
+vec3 seededCosinePalette(float t, uint seed) {
+  vec3 r0 = prng3f(seed + 17u);
+  vec3 r1 = prng3f(seed + 53u);
+  vec3 r2 = prng3f(seed + 97u);
+  vec3 a = mix(vec3(0.35), vec3(0.62), r0);
+  vec3 b = mix(vec3(0.28), vec3(0.48), r1);
+  vec3 c = mix(vec3(0.75), vec3(1.55), r2);
+  vec3 d = prng3f(seed + 151u);
+  return clamp(a + b * cos(6.2831853 * (c * t + d)), 0.0, 1.0);
+}
 `;
