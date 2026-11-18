@@ -38,6 +38,51 @@ function createProgram(gl, vsSource, fsSource) {
   return program;
 }
 
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
+
+async function createProgramAsync(gl, vsSource, fsSource, parallelExt, onTick) {
+  // Yield a frame before starting so UI loading bars paint smoothly
+  await nextFrame();
+
+  const vs = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vs, vsSource);
+  gl.compileShader(vs);
+
+  const fs = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fs, fsSource);
+  gl.compileShader(fs);
+
+  const program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+  gl.deleteShader(vs);
+  gl.deleteShader(fs);
+
+  // If KHR_parallel_shader_compile is available, poll completion asynchronously without blocking the main thread
+  if (parallelExt) {
+    let ticks = 0;
+    while (
+      !gl.isContextLost() &&
+      ticks < 180 &&
+      !gl.getProgramParameter(program, parallelExt.COMPLETION_STATUS_KHR)
+    ) {
+      ticks += 1;
+      onTick?.(ticks);
+      await nextFrame();
+    }
+  }
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    const info = gl.getProgramInfoLog(program);
+    gl.deleteProgram(program);
+    throw new Error(`Program link error:\n${info}`);
+  }
+  return program;
+}
+
 /**
  * Minimal WebGL2 fullscreen-quad shader engine.
  * Supports both single-pass fragment shaders and two-pass ping-pong FBO simulations.
@@ -59,6 +104,8 @@ export class GLEngine {
       gl.getExtension('EXT_color_buffer_float') ||
       gl.getExtension('EXT_color_buffer_half_float')
     );
+    this.parallelCompileExt = gl.getExtension('KHR_parallel_shader_compile');
+    this._loadToken = 0;
 
     this.mode = 'single'; // 'single' | 'pingpong'
     this.program = null;
@@ -68,6 +115,8 @@ export class GLEngine {
     this.uniformValues = {};
     this.pointerState = [0.5, 0.5, 0.0, 0.0]; // x, y (UV), down, wheel/pulse
     this.pointerVel = [0.0, 0.0];
+    this.camYaw = Math.PI * 0.25;
+    this.camPitch = 0.6154797; // atan(1 / sqrt(2)) exact isometric tilt
     this.maxObjects = 8;
     this.objectUniforms = []; // Array of { pos: [x,y,radius,charge], vel: [vx,vy,r,g], extra: [b,mode,0,0] }
 
@@ -78,8 +127,8 @@ export class GLEngine {
 
     this.paused = false;
     this.needsRedraw = true;
-    this.renderScale = 0.75;
-    this.maxFps = 30;
+    this.renderScale = 1.0;
+    this.maxFps = 60;
     this.elapsed = 0;
     this.frameCount = 0;
     this.lastFrameTime = null;
@@ -185,6 +234,7 @@ export class GLEngine {
   }
 
   loadFragmentShader(fsSource) {
+    this._loadToken += 1;
     this._clearPrograms();
     this._destroyFBOs();
     this.mode = 'single';
@@ -193,7 +243,34 @@ export class GLEngine {
     this.needsRedraw = true;
   }
 
+  async loadFragmentShaderAsync(fsSource, onProgress = null) {
+    const token = ++this._loadToken;
+    onProgress?.(22, 'Compiling shader...');
+    const program = await createProgramAsync(
+      this.gl,
+      VERTEX_SHADER_SRC,
+      fsSource,
+      this.parallelCompileExt,
+      (tick) => onProgress?.(Math.min(86, 25 + tick * 6), 'Compiling GPU pipeline...')
+    );
+    if (token !== this._loadToken) {
+      this.gl.deleteProgram(program);
+      return false;
+    }
+    this._clearPrograms();
+    this._destroyFBOs();
+    this.mode = 'single';
+    this.program = program;
+    this._bindQuadAttrib(this.program);
+    onProgress?.(94, 'Warming frame...');
+    await nextFrame();
+    this.needsRedraw = true;
+    onProgress?.(100, 'Ready');
+    return true;
+  }
+
   loadPingPongShaders(simSource, displaySource) {
+    this._loadToken += 1;
     this._clearPrograms();
     this.mode = 'pingpong';
     this.simProgram = createProgram(this.gl, VERTEX_SHADER_SRC, simSource);
@@ -202,6 +279,49 @@ export class GLEngine {
     this._bindQuadAttrib(this.displayProgram);
     this._ensureFBOs();
     this.needsRedraw = true;
+  }
+
+  async loadPingPongShadersAsync(simSource, displaySource, onProgress = null) {
+    const token = ++this._loadToken;
+    onProgress?.(18, 'Compiling simulation pass...');
+    const simProgram = await createProgramAsync(
+      this.gl,
+      VERTEX_SHADER_SRC,
+      simSource,
+      this.parallelCompileExt,
+      (tick) => onProgress?.(Math.min(54, 22 + tick * 5), 'Compiling simulation pass...')
+    );
+    if (token !== this._loadToken) {
+      this.gl.deleteProgram(simProgram);
+      return false;
+    }
+
+    onProgress?.(58, 'Compiling display pass...');
+    const displayProgram = await createProgramAsync(
+      this.gl,
+      VERTEX_SHADER_SRC,
+      displaySource,
+      this.parallelCompileExt,
+      (tick) => onProgress?.(Math.min(88, 60 + tick * 5), 'Compiling display pass...')
+    );
+    if (token !== this._loadToken) {
+      this.gl.deleteProgram(simProgram);
+      this.gl.deleteProgram(displayProgram);
+      return false;
+    }
+
+    this._clearPrograms();
+    this.mode = 'pingpong';
+    this.simProgram = simProgram;
+    this.displayProgram = displayProgram;
+    this._bindQuadAttrib(this.simProgram);
+    this._bindQuadAttrib(this.displayProgram);
+    this._ensureFBOs();
+    onProgress?.(94, 'Warming buffers...');
+    await nextFrame();
+    this.needsRedraw = true;
+    onProgress?.(100, 'Ready');
+    return true;
   }
 
   resetSimulation() {
@@ -239,6 +359,12 @@ export class GLEngine {
    */
   setObjects(objects = []) {
     this.objectUniforms = objects.slice(0, this.maxObjects);
+    this.needsRedraw = true;
+  }
+
+  setCamera(yaw, pitch) {
+    this.camYaw = yaw;
+    this.camPitch = pitch;
     this.needsRedraw = true;
   }
 
@@ -290,7 +416,44 @@ export class GLEngine {
     this._bindUniform(program, 'u_resolution', [this.canvas.width, this.canvas.height]);
     this._bindUniform(program, 'u_pointer', this.pointerState);
     this._bindUniform(program, 'u_pointerVel', this.pointerVel);
+    this._bindUniform(program, 'u_camYaw', this.camYaw);
+    this._bindUniform(program, 'u_camPitch', this.camPitch);
     this._bindUniform(program, 'u_objectCount', this.objectUniforms.length);
+
+    // Bind packed vec4[8] uniform arrays (fast single-call upload & loopable in GLSL)
+    const gl = this.gl;
+    const posArr = new Float32Array(32);
+    const velArr = new Float32Array(32);
+    const extArr = new Float32Array(32);
+    for (let i = 0; i < this.maxObjects; i++) {
+      const obj = this.objectUniforms[i];
+      if (obj) {
+        const off = i * 4;
+        posArr[off] = obj.x ?? 0.5;
+        posArr[off + 1] = obj.y ?? 0.5;
+        posArr[off + 2] = obj.radius ?? 0.06;
+        posArr[off + 3] = obj.charge ?? 1.0;
+
+        velArr[off] = obj.vx ?? 0.0;
+        velArr[off + 1] = obj.vy ?? 0.0;
+        velArr[off + 2] = obj.color?.[0] ?? 1.0;
+        velArr[off + 3] = obj.color?.[1] ?? 1.0;
+
+        extArr[off] = obj.z ?? 0.0;
+        extArr[off + 1] = obj.vz ?? 0.0;
+        extArr[off + 2] = obj.color?.[2] ?? 1.0;
+        extArr[off + 3] = 0.0;
+      }
+    }
+    const pKey = `${program === this.simProgram ? 'sim' : program === this.displayProgram ? 'disp' : 'main'}:`;
+    for (const [uName, data] of [['u_objectPos', posArr], ['u_objectVel', velArr], ['u_objectExtra', extArr]]) {
+      let loc = this.uniformLocations.get(pKey + uName);
+      if (loc === undefined) {
+        loc = gl.getUniformLocation(program, uName);
+        this.uniformLocations.set(pKey + uName, loc);
+      }
+      if (loc !== null) gl.uniform4fv(loc, data);
+    }
 
     for (let i = 0; i < this.maxObjects; i++) {
       const obj = this.objectUniforms[i];
@@ -307,9 +470,16 @@ export class GLEngine {
           obj.color?.[0] ?? 1.0,
           obj.color?.[1] ?? 1.0,
         ]);
+        this._bindUniform(program, `u_objectExtra${i}`, [
+          obj.z ?? 0.0,
+          obj.vz ?? 0.0,
+          obj.color?.[2] ?? 1.0,
+          0.0,
+        ]);
       } else {
         this._bindUniform(program, `u_objectPos${i}`, [0.0, 0.0, 0.0, 0.0]);
         this._bindUniform(program, `u_objectVel${i}`, [0.0, 0.0, 0.0, 0.0]);
+        this._bindUniform(program, `u_objectExtra${i}`, [0.0, 0.0, 0.0, 0.0]);
       }
     }
 
@@ -394,7 +564,7 @@ export class GLEngine {
       }
 
       if (!this.paused && this.maxFps > 0) {
-        const minInterval = 1000 / this.maxFps;
+        const minInterval = (1000 / this.maxFps) - 1.0;
         if (now - this.lastRenderTime < minInterval) {
           return;
         }
@@ -429,6 +599,25 @@ export class GLEngine {
 
   resetTime() {
     this.elapsed = 0;
+  }
+
+  captureThumbnail(maxWidth = 360) {
+    try {
+      const w = this.canvas.width;
+      const h = this.canvas.height;
+      if (!w || !h) return null;
+      const scale = Math.min(1, maxWidth / w);
+      const tw = Math.max(1, Math.round(w * scale));
+      const th = Math.max(1, Math.round(h * scale));
+      const tmp = document.createElement('canvas');
+      tmp.width = tw;
+      tmp.height = th;
+      const ctx = tmp.getContext('2d');
+      ctx.drawImage(this.canvas, 0, 0, tw, th);
+      return tmp.toDataURL('image/jpeg', 0.72);
+    } catch {
+      return null;
+    }
   }
 
   destroy() {

@@ -1,9 +1,9 @@
 import { SceneObject } from '../core/scene-object.js';
 
 /**
- * Interactive 2D Magnetic Field Node for Ferrofluid & Reactive Shader Sandboxes.
+ * Interactive 3D Magnetic Field Node for Isometric Ferrofluid & Reactive Shader Sandboxes.
  * Supports:
- * - Free user dragging & throw momentum (`mode: 'manual'`)
+ * - Free user dragging & XYZ gizmo manipulation (`mode: 'manual'`)
  * - Autonomous figure-8 / orbital patrol (`mode: 'orbit'`)
  * - Harmonic pulse oscillation (`mode: 'pulse'`)
  */
@@ -12,6 +12,7 @@ export class MagnetNode extends SceneObject {
     name = '',
     x = 0.5,
     y = 0.5,
+    z = 0.065,
     radius = 0.065,
     charge = 1.2,
     mode = 'manual', // 'manual' | 'orbit' | 'pulse'
@@ -21,13 +22,14 @@ export class MagnetNode extends SceneObject {
     color = null,
   } = {}) {
     const defaultColor = charge >= 0 ? [0.95, 0.36, 0.22] : [0.22, 0.62, 0.96];
-    const initX = mode === 'orbit' ? Math.max(0.08, Math.min(0.92, x + Math.cos(phase) * orbitRadius)) : x;
-    const initY = mode === 'orbit' ? Math.max(0.08, Math.min(0.92, y + Math.sin(phase * 1.5) * (orbitRadius * 0.75))) : y;
+    const initX = mode === 'orbit' ? Math.max(0.14, Math.min(0.86, x + Math.cos(phase) * orbitRadius)) : x;
+    const initY = mode === 'orbit' ? Math.max(0.14, Math.min(0.86, y + Math.sin(phase * 1.5) * (orbitRadius * 0.75))) : y;
 
     super({
       name,
       x: initX,
       y: initY,
+      z,
       radius,
       charge,
       color: color || defaultColor,
@@ -58,10 +60,22 @@ export class MagnetNode extends SceneObject {
     if (this.mode === 'orbit') {
       const t = elapsed * this.orbitSpeed + this.phase;
       const ry = this.orbitRadius * 0.75;
-      const nextX = Math.max(0.08, Math.min(0.92, this.anchorX + Math.cos(t) * this.orbitRadius));
-      const nextY = Math.max(0.08, Math.min(0.92, this.anchorY + Math.sin(t * 1.5) * ry));
+      let nextX = this.anchorX + Math.cos(t) * this.orbitRadius;
+      let nextY = this.anchorY + Math.sin(t * 1.5) * ry;
 
-      // Analytical derivative (avoids division-by-dt spikes on frame 0 or mode switch)
+      if (stage?.viewMode >= 0.5) {
+        const dx = nextX - 0.5;
+        const dy = nextY - 0.5;
+        const d = Math.hypot(dx, dy);
+        if (d > 0.34) {
+          nextX = 0.5 + (dx / d) * 0.34;
+          nextY = 0.5 + (dy / d) * 0.34;
+        }
+      } else {
+        nextX = Math.max(0.08, Math.min(0.92, nextX));
+        nextY = Math.max(0.08, Math.min(0.92, nextY));
+      }
+
       this.vx = -Math.sin(t) * this.orbitRadius * this.orbitSpeed;
       this.vy = Math.cos(t * 1.5) * 1.5 * ry * this.orbitSpeed;
       this.x = nextX;
