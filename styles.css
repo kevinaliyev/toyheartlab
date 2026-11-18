@@ -94,8 +94,44 @@ body,
 
 .toybox-header-left {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.55rem;
+}
+
+.toybox-header .hud-back {
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0.14rem 0.5rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.toybox-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.toybox-link-thumbs,
+.toybox-export-thumbs {
+  background: rgba(251, 250, 247, 0.5);
+  border: 1px solid rgba(17, 17, 17, 0.4);
+  color: #111111;
+  opacity: 0.5;
+  transition: opacity 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+}
+
+.toybox-link-thumbs {
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 0.18rem 0.38rem;
+}
+
+.toybox-link-thumbs:hover {
+  background: #b8d8f6;
+  border-color: #7aaad9;
+  color: #111111;
+  opacity: 1;
 }
 
 .toybox-export-thumbs {
@@ -104,6 +140,13 @@ body,
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.18rem 0.48rem;
+}
+
+.toybox-export-thumbs:hover {
+  background: #f6b8b8;
+  border-color: #d97a7a;
+  color: #111111;
+  opacity: 1;
 }
 
 .toybox-card-thumb {

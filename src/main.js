@@ -1,4 +1,9 @@
-import { getThumbnail, downloadRepoThumbnailsModule } from './core/thumbnail-store.js';
+import {
+  getThumbnail,
+  exportRepoThumbnails,
+  pickRepoThumbnailsPath,
+  getLinkedThumbnailsName,
+} from './core/thumbnail-store.js';
 
 const root = document.getElementById('app-root');
 let activeApp = null;
@@ -25,6 +30,33 @@ const HOME_OPTIONS = [
     title: 'Toybox',
     subtitle: 'Standalone Apps & Mini-Experiences',
     description: 'Toys :)',
+  },
+];
+
+const SANDBOX_MODULES = [
+  {
+    id: 'sandbox/ferrofluid',
+    thumbKey: 'sandbox:ferrofluid',
+    index: '01',
+    title: 'Magnetic Ferrofluid',
+    subtitle: '2.5D / Raymarched 3D SDF Dish',
+    description: 'Drag, raise, and orbit 3D magnetic poles over ferrofluid bridges and Rosensweig spikes.',
+  },
+  {
+    id: 'sandbox/fluid-advect',
+    thumbKey: 'sandbox:fluid-advect',
+    index: '02',
+    title: 'Fluid Advection',
+    subtitle: 'Ping-Pong Curl-Noise Fluid',
+    description: 'Sculpt divergence-free dye currents with live cursor fields and orbiting emitters.',
+  },
+  {
+    id: 'sandbox/bubble-screen',
+    thumbKey: 'sandbox:bubble-screen',
+    index: '03',
+    title: 'Bubble Screen',
+    subtitle: 'Thin-Film Soap Bubbles',
+    description: 'Pop iridescent bubbles into mist rings using draggable or orbiting 2D objects.',
   },
 ];
 
@@ -204,7 +236,10 @@ function renderMenuScreen({ sectionLabel, items, backLinkHtml = '', showExportTh
   document.title = `toyheart. // ${sectionLabel}`;
   const cardsHtml = items
     .map((item) => {
-      const thumb = getThumbnail(`app:${item.id}`);
+      let thumb = getThumbnail(item.thumbKey || `app:${item.id}`);
+      if (!thumb && item.id === 'toybox') {
+        thumb = getThumbnail('app:arena') || getThumbnail('app:gif-builder');
+      }
       const thumbHtml = thumb
         ? `<div class="toybox-card-thumb"><img src="${thumb}" alt="${item.title} preview" loading="lazy" /></div>`
         : '';
@@ -235,7 +270,10 @@ function renderMenuScreen({ sectionLabel, items, backLinkHtml = '', showExportTh
           </div>
           ${
             showExportThumbs
-              ? '<button id="export-thumbs-btn" type="button" class="toybox-export-thumbs" title="Download default-thumbnails.js for src/thumbnails/">Export Thumbnails</button>'
+              ? `<div class="toybox-header-actions">
+                  <button id="link-thumbs-btn" type="button" class="toybox-link-thumbs" title="Link default-thumbnails.js path on disk">🔗</button>
+                  <button id="export-thumbs-btn" type="button" class="toybox-export-thumbs" title="Export thumbnails to linked path (or download)">Export Thumbnails</button>
+                </div>`
               : ''
           }
         </header>
@@ -248,8 +286,34 @@ function renderMenuScreen({ sectionLabel, items, backLinkHtml = '', showExportTh
   `;
 
   if (showExportThumbs) {
-    root.querySelector('#export-thumbs-btn')?.addEventListener('click', () => {
-      downloadRepoThumbnailsModule();
+    const linkBtn = root.querySelector('#link-thumbs-btn');
+    const exportBtn = root.querySelector('#export-thumbs-btn');
+
+    getLinkedThumbnailsName().then((name) => {
+      if (name && linkBtn) {
+        linkBtn.title = `Linked: ${name} (click to change)`;
+      }
+    });
+
+    linkBtn?.addEventListener('click', async () => {
+      const res = await pickRepoThumbnailsPath();
+      if (res.ok) {
+        linkBtn.title = `Linked: ${res.name} (click to change)`;
+        if (exportBtn) {
+          exportBtn.textContent = `Linked → ${res.name}`;
+          setTimeout(() => {
+            exportBtn.textContent = 'Export Thumbnails';
+          }, 1800);
+        }
+      }
+    });
+
+    exportBtn?.addEventListener('click', async () => {
+      const res = await exportRepoThumbnails();
+      exportBtn.textContent = res.writtenToDisk ? `Saved → ${res.name}` : 'Downloaded';
+      setTimeout(() => {
+        exportBtn.textContent = 'Export Thumbnails';
+      }, 1800);
     });
   }
 }
@@ -259,6 +323,14 @@ function renderHomeMenu() {
     sectionLabel: 'home',
     items: HOME_OPTIONS,
     showExportThumbs: true,
+  });
+}
+
+function renderSandboxMenu() {
+  renderMenuScreen({
+    sectionLabel: 'sandbox',
+    items: SANDBOX_MODULES,
+    backLinkHtml: '<a href="#home" class="hud-back" title="Return to Home">← Home</a>',
   });
 }
 
@@ -286,12 +358,27 @@ async function handleRoute() {
     return;
   }
 
+  if (hash === 'sandbox') {
+    renderSandboxMenu();
+    return;
+  }
+
   if (hash === 'toybox') {
     renderToybox();
     return;
   }
 
-  const app = APPS.find((t) => t.id === hash);
+  let appId = hash;
+  let mountOptions = {};
+  if (hash.startsWith('sandbox/')) {
+    appId = 'sandbox';
+    mountOptions = {
+      initialStudyId: hash.slice('sandbox/'.length),
+      autoPlay: true,
+    };
+  }
+
+  const app = APPS.find((t) => t.id === appId);
   if (!app) {
     renderHomeMenu();
     return;
@@ -313,7 +400,7 @@ async function handleRoute() {
   try {
     const mod = await app.loader();
     if (token !== routeToken) return;
-    activeApp = mod.mount(root);
+    activeApp = mod.mount(root, mountOptions);
   } catch (err) {
     if (token !== routeToken) return;
     root.innerHTML = `

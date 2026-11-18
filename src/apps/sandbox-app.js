@@ -23,7 +23,7 @@ const PERF_PRESETS = {
   ultra: { scale: 1.0, fps: 120 },
 };
 
-export function mount(root) {
+export function mount(root, options = {}) {
   root.innerHTML = `
     <div class="stage-stack">
       <canvas id="gl-canvas"></canvas>
@@ -47,8 +47,7 @@ export function mount(root) {
     <aside id="hud" class="hud">
       <div class="hud-bar">
         <div class="hud-nav">
-          <a href="#home" class="hud-back" title="Return to Home">← Home</a>
-          <span class="hud-title">Sandbox</span>
+          <a href="#sandbox" class="hud-back" title="Return to Sandbox">← Sandbox</a>
         </div>
         <div class="hud-bar-actions">
           <button id="lock-hud" type="button" class="hud-lock-btn" title="Unlock to reorder tabs">🔒</button>
@@ -249,7 +248,8 @@ export function mount(root) {
   initHudReorder({ hud, hudBody, lockBtn: lockHudBtn, storageKey: 'toyheart.hudOrder.sandbox.v1' });
   const animator = new KeyframeAnimator();
 
-  let activeStudy = SANDBOX_STUDIES[0];
+  let activeStudy =
+    (options.initialStudyId && SANDBOX_STUDIES.find((s) => s.id === options.initialStudyId)) || SANDBOX_STUDIES[0];
   let activeParams = {};
   let seed = Math.random() * 100;
   let compiledStudyId = null;
@@ -689,6 +689,9 @@ export function mount(root) {
   spawnStarterObjects();
   loadStudy(activeStudy.id);
   engine.start();
+  if (options.autoPlay) {
+    compileAndPlayActiveStudy();
+  }
 
   return {
     destroy() {

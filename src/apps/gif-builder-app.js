@@ -353,7 +353,7 @@ export function mount(root) {
     });
 
     thumbSession.arm({
-      keys: ['app:gif-builder'],
+      keys: ['app:gif-builder', 'app:toybox'],
       study: found,
     });
   }
