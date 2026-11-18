@@ -66,6 +66,10 @@ export class GLEngine {
     this.displayProgram = null;
     this.uniformLocations = new Map();
     this.uniformValues = {};
+    this.pointerState = [0.5, 0.5, 0.0, 0.0]; // x, y (UV), down, wheel/pulse
+    this.pointerVel = [0.0, 0.0];
+    this.maxObjects = 8;
+    this.objectUniforms = []; // Array of { pos: [x,y,radius,charge], vel: [vx,vy,r,g], extra: [b,mode,0,0] }
 
     this.fbos = [null, null];
     this.fboIndex = 0;
@@ -220,6 +224,24 @@ export class GLEngine {
     this.needsRedraw = true;
   }
 
+  /**
+   * Update normalized pointer state in UV coordinates [0..1] (y=0 bottom, y=1 top).
+   */
+  setPointer(x, y, pressed = 0.0, strength = 1.0, vx = 0.0, vy = 0.0) {
+    this.pointerState = [x, y, pressed, strength];
+    this.pointerVel = [vx, vy];
+    this.needsRedraw = true;
+  }
+
+  /**
+   * Sync 2D scene objects into standard shader uniforms (u_objectCount, u_objectPos0..7, u_objectVel0..7).
+   * Each entry in `objects`: { x, y, vx, vy, radius, charge, color: [r,g,b] } in UV space.
+   */
+  setObjects(objects = []) {
+    this.objectUniforms = objects.slice(0, this.maxObjects);
+    this.needsRedraw = true;
+  }
+
   setRenderScale(scale) {
     this.renderScale = Math.max(0.25, Math.min(2.0, scale));
     this.resize();
@@ -266,6 +288,30 @@ export class GLEngine {
     this._bindUniform(program, 'u_time', this.elapsed);
     this._bindUniform(program, 'u_frame', this.frameCount);
     this._bindUniform(program, 'u_resolution', [this.canvas.width, this.canvas.height]);
+    this._bindUniform(program, 'u_pointer', this.pointerState);
+    this._bindUniform(program, 'u_pointerVel', this.pointerVel);
+    this._bindUniform(program, 'u_objectCount', this.objectUniforms.length);
+
+    for (let i = 0; i < this.maxObjects; i++) {
+      const obj = this.objectUniforms[i];
+      if (obj) {
+        this._bindUniform(program, `u_objectPos${i}`, [
+          obj.x ?? 0.5,
+          obj.y ?? 0.5,
+          obj.radius ?? 0.06,
+          obj.charge ?? 1.0,
+        ]);
+        this._bindUniform(program, `u_objectVel${i}`, [
+          obj.vx ?? 0.0,
+          obj.vy ?? 0.0,
+          obj.color?.[0] ?? 1.0,
+          obj.color?.[1] ?? 1.0,
+        ]);
+      } else {
+        this._bindUniform(program, `u_objectPos${i}`, [0.0, 0.0, 0.0, 0.0]);
+        this._bindUniform(program, `u_objectVel${i}`, [0.0, 0.0, 0.0, 0.0]);
+      }
+    }
 
     for (const [name, value] of Object.entries(this.uniformValues)) {
       this._bindUniform(program, name, value);
