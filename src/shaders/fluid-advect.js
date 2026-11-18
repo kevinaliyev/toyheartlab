@@ -4,19 +4,20 @@ export const fluidAdvectStudy = {
   id: 'fluid-advect',
   name: 'Fluid Advection',
   description:
-    'Divergence-free curl-noise fluid simulation with semi-Lagrangian dye advection, orbiting emitters, and liquid surface sheen.',
+    'Divergence-free curl-noise fluid simulation with semi-Lagrangian dye advection, orbiting emitters (can be set to 0 for pure pole control), and liquid surface sheen.',
   mode: 'pingpong',
   usesTritone: false,
   usesGradient: true,
+  supportsObjects: true,
   params: [
-    { key: 'u_flowSpeed', label: 'Flow Speed', min: 0.1, max: 2.5, step: 0.05, default: 0.85 },
-    { key: 'u_scale', label: 'Curl Scale', min: 1.0, max: 8.0, step: 0.1, default: 3.2 },
-    { key: 'u_turbulence', label: 'Turbulence', min: 0.1, max: 2.0, step: 0.05, default: 0.95 },
-    { key: 'u_dissipation', label: 'Dissipation', min: 0.94, max: 0.998, step: 0.002, default: 0.986 },
-    { key: 'u_emitters', label: 'Emitters', min: 1, max: 4, step: 1, default: 2 },
-    { key: 'u_sheen', label: 'Liquid Sheen', min: 0.0, max: 1.0, step: 0.02, default: 0.45 },
-    { key: 'u_colorSpread', label: 'Colour Spread', min: 0.4, max: 3.0, step: 0.05, default: 1.35 },
-    { key: 'u_colorSeed', label: 'Colour Seed Offset', min: 0.0, max: 100.0, step: 1.0, default: 0.0 },
+    { key: 'u_flowSpeed', label: 'Flow Speed', group: 'Fluid Physics', min: 0.1, max: 2.5, step: 0.05, default: 0.85 },
+    { key: 'u_scale', label: 'Curl Scale', group: 'Fluid Physics', min: 1.0, max: 8.0, step: 0.1, default: 3.2 },
+    { key: 'u_turbulence', label: 'Turbulence', group: 'Fluid Physics', min: 0.1, max: 2.0, step: 0.05, default: 0.95 },
+    { key: 'u_dissipation', label: 'Dissipation', group: 'Fluid Physics', min: 0.94, max: 0.998, step: 0.002, default: 0.986 },
+    { key: 'u_emitters', label: 'Auto Emitters', group: 'Fluid Physics', min: 0, max: 4, step: 1, default: 2 },
+    { key: 'u_sheen', label: 'Liquid Sheen', group: 'Surface & Colour', min: 0.0, max: 1.0, step: 0.02, default: 0.45 },
+    { key: 'u_colorSpread', label: 'Colour Spread', group: 'Surface & Colour', min: 0.4, max: 3.0, step: 0.05, default: 1.35 },
+    { key: 'u_colorSeed', label: 'Colour Seed Offset', group: 'Surface & Colour', min: 0.0, max: 100.0, step: 1.0, default: 0.0 },
   ],
   simShader: /* glsl */ `#version 300 es
 precision highp float;
@@ -35,7 +36,56 @@ uniform float u_turbulence;
 uniform float u_dissipation;
 uniform float u_emitters;
 
+uniform vec4 u_pointer;
+uniform vec2 u_pointerVel;
+uniform float u_objectCount;
+uniform vec4 u_objectPos0; uniform vec4 u_objectVel0;
+uniform vec4 u_objectPos1; uniform vec4 u_objectVel1;
+uniform vec4 u_objectPos2; uniform vec4 u_objectVel2;
+uniform vec4 u_objectPos3; uniform vec4 u_objectVel3;
+uniform vec4 u_objectPos4; uniform vec4 u_objectVel4;
+uniform vec4 u_objectPos5; uniform vec4 u_objectVel5;
+uniform vec4 u_objectPos6; uniform vec4 u_objectVel6;
+uniform vec4 u_objectPos7; uniform vec4 u_objectVel7;
+
 ${COMMON_GLSL}
+
+void accumObjectVelocity(vec2 uv, vec2 aspect, vec4 objPos, vec4 objVel, inout vec2 vel) {
+  float radius = max(objPos.z, 0.03);
+  float charge = clamp(objPos.w, -2.5, 2.5);
+  if (abs(charge) < 0.001) return;
+  vec2 d = (uv - objPos.xy) * aspect;
+  float r2 = dot(d, d);
+  float s2 = radius * radius * 2.4;
+  float falloff = exp(-r2 / s2);
+
+  // Non-singular radial & vortex vectors (strictly 0 at r=0 so lookup never overshoots or explodes)
+  float denom = radius * 1.25 + r2 / max(radius, 0.02);
+  vec2 radial = d / denom;
+  vec2 swirl = vec2(-d.y, d.x) / denom;
+  vec2 safeObjVel = clamp(objVel.xy, vec2(-1.0), vec2(1.0));
+
+  // Positive (+) poles emit outward + swirl; Negative (-) poles pull plumes in from (+) poles
+  vel += safeObjVel * falloff * 0.0065
+       + (radial * 0.0024 + swirl * 0.0030) * (charge * falloff);
+}
+
+void injectObjectDye(vec2 uv, vec2 aspect, vec4 objPos, float t, float idx, inout vec4 state) {
+  float radius = max(objPos.z, 0.03);
+  float charge = clamp(objPos.w, -2.5, 2.5);
+  if (abs(charge) < 0.001) return;
+  vec2 d = (uv - objPos.xy) * aspect;
+  float r2 = dot(d, d);
+  float falloff = exp(-r2 / (radius * radius * 1.3));
+  if (charge > 0.0) {
+    float huePhase = fract(idx * 0.27 + t * 0.04);
+    state.r = min(1.35, state.r + falloff * min(charge, 2.0) * 0.16);
+    state.g = mix(state.g, huePhase, clamp(falloff * 0.55, 0.0, 1.0));
+  } else {
+    // South (-) pole acts as a magnetic sink that draws in plumes and gently dissipates core excess
+    state.r *= mix(1.0, 0.88, falloff * min(abs(charge), 1.5));
+  }
+}
 
 // Divergence-free 2D curl velocity from smooth value-noise streamfunction
 vec2 curlVelocity(vec2 p, float t) {
@@ -54,8 +104,25 @@ void main() {
   vec2 p = (v_uv - 0.5) * aspect * u_scale + u_seed * 7.13;
   float t = u_time * u_flowSpeed;
 
-  // 1. Curl-noise velocity field (divergence-free)
+  // 1. Curl-noise velocity field + 2D object & pointer velocity BEFORE advection lookup
   vec2 vel = curlVelocity(p, t) * u_turbulence * 0.0045 * u_flowSpeed;
+  if (abs(u_pointer.w) > 0.01) {
+    vec2 pd = (v_uv - u_pointer.xy) * aspect;
+    float pf = exp(-dot(pd, pd) * 220.0);
+    vel += u_pointerVel * pf * 0.010;
+  }
+
+  int objCount = int(u_objectCount + 0.5);
+  if (objCount > 0) accumObjectVelocity(v_uv, aspect, u_objectPos0, u_objectVel0, vel);
+  if (objCount > 1) accumObjectVelocity(v_uv, aspect, u_objectPos1, u_objectVel1, vel);
+  if (objCount > 2) accumObjectVelocity(v_uv, aspect, u_objectPos2, u_objectVel2, vel);
+  if (objCount > 3) accumObjectVelocity(v_uv, aspect, u_objectPos3, u_objectVel3, vel);
+  if (objCount > 4) accumObjectVelocity(v_uv, aspect, u_objectPos4, u_objectVel4, vel);
+  if (objCount > 5) accumObjectVelocity(v_uv, aspect, u_objectPos5, u_objectVel5, vel);
+  if (objCount > 6) accumObjectVelocity(v_uv, aspect, u_objectPos6, u_objectVel6, vel);
+  if (objCount > 7) accumObjectVelocity(v_uv, aspect, u_objectPos7, u_objectVel7, vel);
+
+  vel = clamp(vel, vec2(-0.016), vec2(0.016));
   vec2 prevUv = clamp(v_uv - vel / aspect, vec2(0.001), vec2(0.999));
 
   // 2. Semi-Lagrangian advection + gentle 4-tap viscous diffusion
@@ -69,9 +136,26 @@ void main() {
   ) * 0.25;
   vec4 state = mix(advected, blur, 0.08) * u_dissipation;
 
-  // 3. Seeded orbiting fluid dye emitters
+  // 2D Objects & active cursor inject / sculpt dye
+  if (objCount > 0) injectObjectDye(v_uv, aspect, u_objectPos0, t, 0.0, state);
+  if (objCount > 1) injectObjectDye(v_uv, aspect, u_objectPos1, t, 1.0, state);
+  if (objCount > 2) injectObjectDye(v_uv, aspect, u_objectPos2, t, 2.0, state);
+  if (objCount > 3) injectObjectDye(v_uv, aspect, u_objectPos3, t, 3.0, state);
+  if (objCount > 4) injectObjectDye(v_uv, aspect, u_objectPos4, t, 4.0, state);
+  if (objCount > 5) injectObjectDye(v_uv, aspect, u_objectPos5, t, 5.0, state);
+  if (objCount > 6) injectObjectDye(v_uv, aspect, u_objectPos6, t, 6.0, state);
+  if (objCount > 7) injectObjectDye(v_uv, aspect, u_objectPos7, t, 7.0, state);
+
+  if (u_pointer.z > 0.5 && abs(u_pointer.w) > 0.01) {
+    vec2 pd = (v_uv - u_pointer.xy) * aspect;
+    float pf = exp(-dot(pd, pd) * 380.0);
+    state.r = min(1.5, state.r + pf * 0.24);
+    state.g = mix(state.g, fract(t * 0.08), clamp(pf * 0.6, 0.0, 1.0));
+  }
+
+  // 3. Seeded orbiting fluid dye emitters (can be set to 0)
   uint baseSeed = uint(max(u_seed, 0.0) * 1000.0) + 1u;
-  int count = int(clamp(u_emitters, 1.0, 4.0) + 0.5);
+  int count = int(clamp(u_emitters, 0.0, 4.0) + 0.5);
 
   for (int i = 0; i < 4; i++) {
     if (i >= count) break;
