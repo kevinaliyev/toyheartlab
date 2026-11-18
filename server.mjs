@@ -1,13 +1,32 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PRESETS_DIR = path.join(ROOT_DIR, 'presets');
 const EXPORTS_DIR = path.join(ROOT_DIR, 'exports');
+const SHADERS_DIR = path.join(ROOT_DIR, 'src', 'shaders');
 const PORT = Number(process.env.PORT || 8000);
 const HOST = '127.0.0.1';
+
+const watchClients = new Set();
+let watchTimer = null;
+try {
+  fsSync.watch(SHADERS_DIR, (_eventType, filename) => {
+    if (!filename || !filename.endsWith('.js')) return;
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(() => {
+      const payload = `data: ${JSON.stringify({ file: filename, ts: Date.now() })}\n\n`;
+      for (const client of watchClients) {
+        client.write(payload);
+      }
+    }, 100);
+  });
+} catch {
+  // Ignore if directory watch is unavailable
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -86,6 +105,18 @@ async function listDiskPresets() {
 }
 
 async function handleApi(req, res, urlPath) {
+  if (req.method === 'GET' && urlPath === '/api/watch') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-store',
+      Connection: 'keep-alive',
+    });
+    res.write('retry: 2000\n\n');
+    watchClients.add(res);
+    req.on('close', () => watchClients.delete(res));
+    return;
+  }
+
   if (req.method === 'GET' && urlPath === '/api/presets') {
     const presets = await listDiskPresets();
     return sendJson(res, 200, { ok: true, presets });

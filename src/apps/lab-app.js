@@ -14,9 +14,11 @@ import { zebraRunwayStudy } from '../shaders/zebra-runway.js';
 import { fractalPrngStudy } from '../shaders/fractal-prng.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
+import { noiseSignalStudy } from '../shaders/noise-signal.js';
 import { renderParamControls } from '../core/gui-builder.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { PathStudio } from '../core/path-studio.js';
+import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-reload.js';
 
 const STUDIES = [
   watercolorStudy,
@@ -24,6 +26,7 @@ const STUDIES = [
   fluidAdvectStudy,
   zebraRunwayStudy,
   fractalPrngStudy,
+  noiseSignalStudy,
 ];
 
 const PERF_PRESETS = {
@@ -48,9 +51,10 @@ export function mount(root) {
       </div>
 
       <div class="hud-body">
-        <div class="actions hud-transport">
+        <div class="actions hud-transport" style="grid-template-columns: 1fr 1fr auto;">
           <button id="pause-btn" type="button">Pause</button>
           <button id="reseed-btn" type="button">Re-seed</button>
+          <button id="hot-reload-btn" type="button" title="Hot-reload active shader (Shift+R)">↻</button>
         </div>
 
         <div class="hud-shared-block">
@@ -161,6 +165,7 @@ export function mount(root) {
   const paramsContainer = root.querySelector('#params-container');
   const pauseBtn = root.querySelector('#pause-btn');
   const reseedBtn = root.querySelector('#reseed-btn');
+  const hotReloadBtn = root.querySelector('#hot-reload-btn');
   const togglePathDraw = root.querySelector('#toggle-path-draw');
   const pathToolSelect = root.querySelector('#path-tool-select');
   const pathTraceText = root.querySelector('#path-trace-text');
@@ -523,6 +528,31 @@ export function mount(root) {
     }
   });
 
+  async function hotReloadActiveShader() {
+    const targetId = activeStudy.id;
+    try {
+      const fresh = await reloadShaderModule(targetId);
+      if (!fresh) return;
+      const idx = STUDIES.findIndex((s) => s.id === targetId);
+      if (idx >= 0) STUDIES[idx] = fresh;
+      const savedParams = { ...activeParams };
+      const savedPigments = [...pigmentHexes];
+      await loadStudy(targetId, { params: savedParams, pigments: savedPigments });
+      setStatus(`Hot-reloaded ${fresh.name}`);
+    } catch (err) {
+      setStatus(`Hot-reload error: ${err.message}`);
+    }
+  }
+
+  hotReloadBtn.addEventListener('click', hotReloadActiveShader);
+
+  const disconnectWatch = connectShaderHotReload((file, map) => {
+    const entry = map[activeStudy.id];
+    if (entry && (entry.file === file || file === 'common.glsl.js')) {
+      hotReloadActiveShader();
+    }
+  });
+
   function toggleHud() {
     const collapsed = hud.classList.toggle('collapsed');
     toggleHudBtn.textContent = collapsed ? 'Show GUI (H)' : 'Hide (H)';
@@ -531,6 +561,7 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
+    if (e.shiftKey && (e.key === 'r' || e.key === 'R')) hotReloadActiveShader();
   };
   const onResize = () => {
     engine.resize();
@@ -555,6 +586,7 @@ export function mount(root) {
 
   return {
     destroy() {
+      disconnectWatch();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
       loader.destroy();

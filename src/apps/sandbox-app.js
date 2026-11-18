@@ -7,6 +7,7 @@ import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { KeyframeAnimator } from '../core/keyframe-animator.js';
+import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-reload.js';
 
 const SANDBOX_STUDIES = [ferrofluidStudy, fluidAdvectStudy];
 
@@ -69,9 +70,10 @@ export function mount(root) {
       </div>
 
       <div class="hud-body">
-        <div class="actions hud-transport">
+        <div class="actions hud-transport" style="grid-template-columns: 1fr 1fr auto;">
           <button id="pause-btn" type="button">Pause</button>
           <button id="reseed-btn" type="button">Re-seed</button>
+          <button id="hot-reload-btn" type="button" title="Hot-reload active shader (Shift+R)">↻</button>
         </div>
 
         <div class="hud-shared-block">
@@ -220,6 +222,7 @@ export function mount(root) {
   const paramsContainer = root.querySelector('#params-container');
   const pauseBtn = root.querySelector('#pause-btn');
   const reseedBtn = root.querySelector('#reseed-btn');
+  const hotReloadBtn = root.querySelector('#hot-reload-btn');
 
   const spawnAttractBtn = root.querySelector('#spawn-attract-btn');
   const spawnRepelBtn = root.querySelector('#spawn-repel-btn');
@@ -635,6 +638,29 @@ export function mount(root) {
     animator.clearTrack(stage.selectedObject);
   });
 
+  async function hotReloadActiveShader() {
+    const targetId = activeStudy.id;
+    const fresh = await reloadShaderModule(targetId);
+    if (!fresh) return;
+    const idx = SANDBOX_STUDIES.findIndex((s) => s.id === targetId);
+    if (idx >= 0) SANDBOX_STUDIES[idx] = fresh;
+    activeStudy = fresh;
+
+    if (compiledStudyId === targetId) {
+      compiledStudyId = null;
+      await compileAndPlayActiveStudy();
+    }
+  }
+
+  hotReloadBtn.addEventListener('click', hotReloadActiveShader);
+
+  const disconnectWatch = connectShaderHotReload((file, map) => {
+    const entry = map[activeStudy.id];
+    if (entry && (entry.file === file || file === 'common.glsl.js')) {
+      hotReloadActiveShader();
+    }
+  });
+
   function toggleHud() {
     const collapsed = hud.classList.toggle('collapsed');
     toggleHudBtn.textContent = collapsed ? 'Show GUI (H)' : 'Hide (H)';
@@ -643,6 +669,7 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
+    if (e.shiftKey && (e.key === 'r' || e.key === 'R')) hotReloadActiveShader();
     if ((e.key === 'k' || e.key === 'K') && stage.selectedObject) {
       animator.addKeyframe(stage.selectedObject, animator.playhead);
     }
@@ -667,6 +694,7 @@ export function mount(root) {
 
   return {
     destroy() {
+      disconnectWatch();
       if (thumbTimer) clearTimeout(thumbTimer);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
