@@ -15,6 +15,8 @@ import { fractalPrngStudy } from '../shaders/fractal-prng.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { renderParamControls } from '../core/gui-builder.js';
+import { createLoadingOverlay } from '../core/loading-bar.js';
+import { PathStudio } from '../core/path-studio.js';
 
 const STUDIES = [
   watercolorStudy,
@@ -28,11 +30,13 @@ const PERF_PRESETS = {
   eco: { scale: 0.5, fps: 24 },
   balanced: { scale: 0.75, fps: 30 },
   high: { scale: 1.0, fps: 60 },
+  ultra: { scale: 1.0, fps: 120 },
 };
 
 export function mount(root) {
   root.innerHTML = `
     <canvas id="gl-canvas"></canvas>
+    <canvas id="path-canvas" class="path-overlay-canvas" hidden></canvas>
 
     <aside id="hud" class="hud">
       <div class="hud-bar">
@@ -71,13 +75,44 @@ export function mount(root) {
             <label for="perf-select">GPU Load / FPS</label>
             <select id="perf-select">
               <option value="eco">Eco (0.5x · 24 fps)</option>
-              <option value="balanced" selected>Balanced (0.75x · 30 fps)</option>
-              <option value="high">High (1.0x · 60 fps)</option>
+              <option value="balanced">Balanced (0.75x · 30 fps)</option>
+              <option value="high" selected>High (1.0x · 60 fps)</option>
+              <option value="ultra">Ultra Exp (1.0x · 120 fps)</option>
             </select>
           </div>
         </div>
 
         <div id="params-container" class="params-container"></div>
+
+        <details class="builder-details">
+          <summary>Custom Emitter Paths</summary>
+          <div class="builder-section">
+            <label class="param-row param-toggle-row">
+              <span>Draw Paths on Canvas</span>
+              <input id="toggle-path-draw" type="checkbox" class="param-toggle" />
+            </label>
+            <div class="param-row">
+              <div class="param-header"><span>Pen Assist Tool</span></div>
+              <select id="path-tool-select">
+                <option value="smart" selected>Smart Smooth (RDP + Spline)</option>
+                <option value="magnetic">Magnetic Snap (Edges &amp; Symmetry)</option>
+              </select>
+            </div>
+            <div class="builder-row">
+              <input id="path-trace-text" type="text" placeholder="Trace word (e.g. toyheart)..." value="toyheart" />
+              <button id="path-trace-btn" type="button">Trace</button>
+            </div>
+            <div class="actions" style="border-top:none; padding-top:0;">
+              <button id="path-heart-btn" type="button">♥ Heart</button>
+              <button id="path-spiral-btn" type="button">◎ Spiral</button>
+            </div>
+            <div class="actions" style="border-top:none; padding-top:0;">
+              <button id="path-inf-btn" type="button">∞ Loop</button>
+              <button id="path-clear-btn" type="button">Clear Paths</button>
+            </div>
+            <div id="path-status" class="builder-status">Using built-in study paths (0 custom)</div>
+          </div>
+        </details>
 
         <details class="builder-details">
           <summary>Presets &amp; Export</summary>
@@ -114,6 +149,7 @@ export function mount(root) {
   `;
 
   const canvas = root.querySelector('#gl-canvas');
+  const pathCanvas = root.querySelector('#path-canvas');
   const hud = root.querySelector('#hud');
   const toggleHudBtn = root.querySelector('#toggle-hud');
   const studySelect = root.querySelector('#study-select');
@@ -125,6 +161,15 @@ export function mount(root) {
   const paramsContainer = root.querySelector('#params-container');
   const pauseBtn = root.querySelector('#pause-btn');
   const reseedBtn = root.querySelector('#reseed-btn');
+  const togglePathDraw = root.querySelector('#toggle-path-draw');
+  const pathToolSelect = root.querySelector('#path-tool-select');
+  const pathTraceText = root.querySelector('#path-trace-text');
+  const pathTraceBtn = root.querySelector('#path-trace-btn');
+  const pathHeartBtn = root.querySelector('#path-heart-btn');
+  const pathSpiralBtn = root.querySelector('#path-spiral-btn');
+  const pathInfBtn = root.querySelector('#path-inf-btn');
+  const pathClearBtn = root.querySelector('#path-clear-btn');
+  const pathStatus = root.querySelector('#path-status');
   const studyDesc = root.querySelector('#study-desc');
   const presetNameInput = root.querySelector('#preset-name');
   const savePresetBtn = root.querySelector('#save-preset-btn');
@@ -143,6 +188,16 @@ export function mount(root) {
   }
 
   const engine = new GLEngine(canvas);
+  const loader = createLoadingOverlay(root);
+  const pathStudio = new PathStudio(pathCanvas, (strokes) => {
+    pathStatus.textContent =
+      strokes.length > 0
+        ? `Custom keyframed paths active (${strokes.length} stroke${strokes.length > 1 ? 's' : ''})`
+        : 'Using built-in study paths (0 custom)';
+    if (activeStudy.id === 'watercolor' && strokes.length > 0) {
+      engine.resetSimulation();
+    }
+  });
   let activeStudy = STUDIES[0];
   let activeParams = {};
   let pigmentHexes = [];
@@ -164,7 +219,50 @@ export function mount(root) {
     engine.setUniform('u_gradD', grad.d);
   }
 
-  function loadStudy(studyId, overrides = null) {
+  function bindFrameHooks() {
+    engine.setFrameHook((elapsed) => {
+      if (pathStudio.strokes.length > 0) {
+        const aspect = canvas.width / Math.max(canvas.height, 1);
+        if (activeStudy.id === 'watercolor') {
+          const speed = activeParams.u_speed ?? 0.65;
+          const t = elapsed * speed;
+          const dt = 0.02 * Math.max(speed, 0.15);
+          const count = Math.min(6, pathStudio.strokes.length);
+          for (let i = 0; i < 6; i++) {
+            if (i < count) {
+              const s = pathStudio.sampleBrushAt(t, i, dt, aspect, true);
+              engine.setUniform(`u_brushPos${i}`, s.pos);
+              engine.setUniform(`u_brushPrev${i}`, s.prev);
+              engine.setUniform(`u_brushLift${i}`, s.lift);
+            } else {
+              engine.setUniform(`u_brushLift${i}`, 0.0);
+            }
+          }
+          return;
+        }
+        // Drive any object-aware shader (e.g. fluid-advect) along custom paths
+        const objs = pathStudio.strokes.map((_s, idx) => {
+          const sample = pathStudio.sampleBrushAt(elapsed, idx, 0.02, aspect, false);
+          return {
+            x: sample.pos[0],
+            y: sample.pos[1],
+            vx: (sample.pos[0] - sample.prev[0]) * 30.0,
+            vy: (sample.pos[1] - sample.prev[1]) * 30.0,
+            radius: 0.06,
+            charge: sample.lift > 0.05 ? 1.25 : 0.0,
+          };
+        });
+        engine.setObjects(objs);
+        return;
+      }
+
+      if (activeStudy.onFrame) {
+        activeStudy.onFrame(engine, elapsed, activeParams, seed);
+      }
+    });
+  }
+
+  async function loadStudy(studyId, overrides = null) {
     const found = STUDIES.find((s) => s.id === studyId);
     if (!found) return;
     activeStudy = found;
@@ -184,24 +282,26 @@ export function mount(root) {
       engine.setMaxFps(preset.fps);
     }
 
-    if (activeStudy.mode === 'pingpong') {
-      engine.loadPingPongShaders(activeStudy.simShader, activeStudy.displayShader);
-      engine.resetSimulation();
-    } else {
-      engine.loadFragmentShader(activeStudy.fragmentShader);
+    loader.show(`Loading ${found.name}...`, 15);
+    const onProg = (pct, msg) => loader.setProgress(pct, msg);
+
+    let committed = false;
+    try {
+      if (activeStudy.mode === 'pingpong') {
+        committed = await engine.loadPingPongShadersAsync(activeStudy.simShader, activeStudy.displayShader, onProg);
+        if (committed) engine.resetSimulation();
+      } else {
+        committed = await engine.loadFragmentShaderAsync(activeStudy.fragmentShader, onProg);
+      }
+    } finally {
+      loader.hide();
     }
+    if (!committed) return;
 
     engine.setUniform('u_seed', seed);
     applyPalette(paletteSelect.value);
     applyGradient(gradientSelect.value);
-
-    if (activeStudy.onFrame) {
-      engine.setFrameHook((elapsed) => {
-        activeStudy.onFrame(engine, elapsed, activeParams, seed);
-      });
-    } else {
-      engine.setFrameHook(null);
-    }
+    bindFrameHooks();
 
     paramsContainer.innerHTML = '';
     for (const param of activeStudy.params) {
@@ -269,6 +369,28 @@ export function mount(root) {
     const nextPaused = !engine.paused;
     engine.setPaused(nextPaused);
     pauseBtn.textContent = nextPaused ? 'Play' : 'Pause';
+  });
+
+  togglePathDraw.addEventListener('change', () => {
+    pathStudio.setEnabled(togglePathDraw.checked);
+  });
+  pathToolSelect.addEventListener('change', () => {
+    pathStudio.tool = pathToolSelect.value;
+    pathStudio.render();
+  });
+  pathTraceBtn.addEventListener('click', () => {
+    pathStudio.traceText(pathTraceText.value);
+    if (!togglePathDraw.checked) {
+      togglePathDraw.checked = true;
+      pathStudio.setEnabled(true);
+    }
+  });
+  pathHeartBtn.addEventListener('click', () => pathStudio.loadPresetShape('heart'));
+  pathSpiralBtn.addEventListener('click', () => pathStudio.loadPresetShape('spiral'));
+  pathInfBtn.addEventListener('click', () => pathStudio.loadPresetShape('infinity'));
+  pathClearBtn.addEventListener('click', () => {
+    pathStudio.clear();
+    engine.setObjects([]);
   });
 
   reseedBtn.addEventListener('click', () => {
@@ -410,7 +532,11 @@ export function mount(root) {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
   };
-  const onResize = () => engine.resize();
+  const onResize = () => {
+    engine.resize();
+    pathStudio.resize();
+    pathStudio.render();
+  };
 
   toggleHudBtn.addEventListener('click', toggleHud);
   window.addEventListener('keydown', onKeyDown);
@@ -431,6 +557,7 @@ export function mount(root) {
     destroy() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
+      loader.destroy();
       engine.destroy();
       root.innerHTML = '';
     },

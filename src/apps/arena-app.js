@@ -7,6 +7,7 @@ import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { zebraRunwayStudy } from '../shaders/zebra-runway.js';
 import { fractalPrngStudy } from '../shaders/fractal-prng.js';
+import { createLoadingOverlay } from '../core/loading-bar.js';
 
 const ARENA_GRID_SHADER = {
   id: 'arena-grid',
@@ -49,6 +50,7 @@ const PERF_PRESETS = {
   eco: { scale: 0.5, fps: 24 },
   balanced: { scale: 0.75, fps: 30 },
   high: { scale: 1.0, fps: 60 },
+  ultra: { scale: 1.0, fps: 120 },
 };
 
 export function mount(root) {
@@ -95,8 +97,9 @@ export function mount(root) {
             <label for="perf-select">GPU Load / FPS</label>
             <select id="perf-select">
               <option value="eco">Eco (0.5x · 24 fps)</option>
-              <option value="balanced" selected>Balanced (0.75x · 30 fps)</option>
-              <option value="high">High (1.0x · 60 fps)</option>
+              <option value="balanced">Balanced (0.75x · 30 fps)</option>
+              <option value="high" selected>High (1.0x · 60 fps)</option>
+              <option value="ultra">Ultra Exp (1.0x · 120 fps)</option>
             </select>
           </div>
         </div>
@@ -284,6 +287,7 @@ export function mount(root) {
 
   const engine = new GLEngine(glCanvas);
   const arena = new ArenaSim(simCanvas, engine);
+  const loader = createLoadingOverlay(root);
   let activeParams = {};
   let seed = Math.random() * 100;
 
@@ -342,7 +346,7 @@ export function mount(root) {
     engine.setUniform('u_gradD', grad.d);
   }
 
-  function loadBackdropShader(studyId) {
+  async function loadBackdropShader(studyId) {
     const study = BACKDROP_SHADERS.find((s) => s.id === studyId) || BACKDROP_SHADERS[0];
     studySelect.value = study.id;
     studyDesc.textContent = study.description || '';
@@ -350,12 +354,21 @@ export function mount(root) {
     gradientGroup.hidden = !study.usesGradient;
     activeParams = {};
 
-    if (study.mode === 'pingpong') {
-      engine.loadPingPongShaders(study.simShader, study.displayShader);
-      engine.resetSimulation();
-    } else {
-      engine.loadFragmentShader(study.fragmentShader);
+    loader.show(`Loading ${study.name}...`, 15);
+    const onProg = (pct, msg) => loader.setProgress(pct, msg);
+
+    let committed = false;
+    try {
+      if (study.mode === 'pingpong') {
+        committed = await engine.loadPingPongShadersAsync(study.simShader, study.displayShader, onProg);
+        if (committed) engine.resetSimulation();
+      } else {
+        committed = await engine.loadFragmentShaderAsync(study.fragmentShader, onProg);
+      }
+    } finally {
+      loader.hide();
     }
+    if (!committed) return;
 
     engine.setUniform('u_seed', seed);
     applyPalette(paletteSelect.value);
@@ -551,6 +564,7 @@ export function mount(root) {
       window.removeEventListener('resize', onResize);
       arena.sfx.enabled = false;
       arena.sfx.ctx?.close?.().catch(() => {});
+      loader.destroy();
       engine.destroy();
       root.innerHTML = '';
     },

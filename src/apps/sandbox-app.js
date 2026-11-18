@@ -5,6 +5,8 @@ import { renderParamControls } from '../core/gui-builder.js';
 import { MagnetNode } from '../objects/magnet-node.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
+import { createLoadingOverlay } from '../core/loading-bar.js';
+import { KeyframeAnimator } from '../core/keyframe-animator.js';
 
 const SANDBOX_STUDIES = [ferrofluidStudy, fluidAdvectStudy];
 
@@ -12,13 +14,49 @@ const PERF_PRESETS = {
   eco: { scale: 0.5, fps: 24 },
   balanced: { scale: 0.75, fps: 30 },
   high: { scale: 1.0, fps: 60 },
+  ultra: { scale: 1.0, fps: 120 },
 };
+
+const THUMB_STORAGE_KEY = 'toyheart.shaderThumbs.v1';
+
+function loadThumbCache() {
+  try {
+    return JSON.parse(localStorage.getItem(THUMB_STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function saveThumb(studyId, dataUrl) {
+  if (!dataUrl) return;
+  try {
+    const cache = loadThumbCache();
+    cache[studyId] = dataUrl;
+    localStorage.setItem(THUMB_STORAGE_KEY, JSON.stringify(cache));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
 
 export function mount(root) {
   root.innerHTML = `
     <div class="stage-stack">
       <canvas id="gl-canvas"></canvas>
       <canvas id="sim-canvas"></canvas>
+    </div>
+
+    <div id="session-preview" class="session-preview" hidden>
+      <div class="session-preview-card">
+        <div class="session-thumb-wrap">
+          <img id="session-thumb-img" class="session-thumb-img" alt="" hidden />
+          <div id="session-thumb-empty" class="session-thumb-empty">Sandbox Ready</div>
+        </div>
+        <div class="session-preview-meta">
+          <div id="session-preview-title" class="session-preview-title">Sandbox</div>
+          <div id="session-preview-sub" class="session-preview-sub">Scene &amp; objects loaded — compile on play</div>
+        </div>
+        <button id="session-play-btn" type="button" class="btn-primary session-play-btn">▶ Compile &amp; Play</button>
+      </div>
     </div>
 
     <aside id="hud" class="hud">
@@ -58,8 +96,9 @@ export function mount(root) {
             <label for="perf-select">GPU Load / FPS</label>
             <select id="perf-select">
               <option value="eco">Eco (0.5x · 24 fps)</option>
-              <option value="balanced" selected>Balanced (0.75x · 30 fps)</option>
-              <option value="high">High (1.0x · 60 fps)</option>
+              <option value="balanced">Balanced (0.75x · 30 fps)</option>
+              <option value="high" selected>High (1.0x · 60 fps)</option>
+              <option value="ultra">Ultra Exp (1.0x · 120 fps)</option>
             </select>
           </div>
         </div>
@@ -104,6 +143,14 @@ export function mount(root) {
 
               <div class="param-row">
                 <div class="param-header">
+                  <span>Height Above Dish (Z)</span>
+                  <span id="obj-z-val" class="param-val">0.06</span>
+                </div>
+                <input id="obj-z-slider" type="range" min="0.01" max="0.32" step="0.005" value="0.065" />
+              </div>
+
+              <div class="param-row">
+                <div class="param-header">
                   <span>Field Charge / Polarity</span>
                   <span id="obj-charge-val" class="param-val">1.20</span>
                 </div>
@@ -120,8 +167,31 @@ export function mount(root) {
             </div>
 
             <div class="sandbox-hint">
-              Drag poles on the canvas, throw them, or scroll over a pole to tune its magnetic charge.
+              Left-drag magnet body (XY) or X/Y/Z arrows. Right-drag to orbit camera around dish. Scroll for charge (Shift+Scroll for Z).
             </div>
+          </div>
+        </details>
+
+        <details class="builder-details">
+          <summary>Object Keyframes</summary>
+          <div class="builder-section">
+            <div class="actions" style="border-top:none; padding-top:0;">
+              <button id="kf-play-btn" type="button">▶ Play Timeline</button>
+              <button id="kf-add-btn" type="button">+ Keyframe (K)</button>
+            </div>
+            <div class="param-row">
+              <div class="param-header">
+                <span>Playhead</span>
+                <span id="kf-time-val" class="param-val">0.00s / 6.00s</span>
+              </div>
+              <input id="kf-scrubber" type="range" min="0" max="6" step="0.05" value="0" />
+              <div id="kf-markers" class="kf-markers"></div>
+            </div>
+            <div class="actions" style="border-top:none; padding-top:0;">
+              <button id="kf-del-btn" type="button">Del at Head</button>
+              <button id="kf-clear-btn" type="button">Clear Track</button>
+            </div>
+            <div id="kf-status" class="sandbox-hint">Select a magnet, position it, and add keyframes at different times.</div>
           </div>
         </details>
 
@@ -132,6 +202,12 @@ export function mount(root) {
 
   const glCanvas = root.querySelector('#gl-canvas');
   const simCanvas = root.querySelector('#sim-canvas');
+  const sessionPreview = root.querySelector('#session-preview');
+  const sessionThumbImg = root.querySelector('#session-thumb-img');
+  const sessionThumbEmpty = root.querySelector('#session-thumb-empty');
+  const sessionPreviewTitle = root.querySelector('#session-preview-title');
+  const sessionPreviewSub = root.querySelector('#session-preview-sub');
+  const sessionPlayBtn = root.querySelector('#session-play-btn');
   const hud = root.querySelector('#hud');
   const toggleHudBtn = root.querySelector('#toggle-hud');
   const studySelect = root.querySelector('#study-select');
@@ -156,17 +232,32 @@ export function mount(root) {
   const selectedObjTitle = root.querySelector('#selected-obj-title');
   const deleteObjBtn = root.querySelector('#delete-obj-btn');
   const objModeSelect = root.querySelector('#obj-mode-select');
+  const objZSlider = root.querySelector('#obj-z-slider');
+  const objZVal = root.querySelector('#obj-z-val');
   const objChargeSlider = root.querySelector('#obj-charge-slider');
   const objChargeVal = root.querySelector('#obj-charge-val');
   const objRadiusSlider = root.querySelector('#obj-radius-slider');
   const objRadiusVal = root.querySelector('#obj-radius-val');
 
+  const kfPlayBtn = root.querySelector('#kf-play-btn');
+  const kfAddBtn = root.querySelector('#kf-add-btn');
+  const kfScrubber = root.querySelector('#kf-scrubber');
+  const kfTimeVal = root.querySelector('#kf-time-val');
+  const kfMarkers = root.querySelector('#kf-markers');
+  const kfDelBtn = root.querySelector('#kf-del-btn');
+  const kfClearBtn = root.querySelector('#kf-clear-btn');
+  const kfStatus = root.querySelector('#kf-status');
+
   const engine = new GLEngine(glCanvas);
   const stage = new Stage2D(simCanvas, engine);
+  const loader = createLoadingOverlay(root);
+  const animator = new KeyframeAnimator();
 
   let activeStudy = SANDBOX_STUDIES[0];
   let activeParams = {};
   let seed = Math.random() * 100;
+  let compiledStudyId = null;
+  let thumbTimer = null;
 
   function applyPalette(paletteKey) {
     const pal = PALETTES[paletteKey] || PALETTES.archival;
@@ -184,6 +275,71 @@ export function mount(root) {
     engine.setUniform('u_gradD', grad.d);
   }
 
+  function showSessionPreview(study) {
+    sessionPreview.hidden = false;
+    sessionPreviewTitle.textContent = study.name;
+    sessionPreviewSub.textContent = `${study.mode === 'pingpong' ? 'Ping-Pong FBO' : '3D SDF Raymarcher'} · Ready to compile`;
+    const thumb = loadThumbCache()[`sandbox:${study.id}`];
+    if (thumb) {
+      sessionThumbImg.src = thumb;
+      sessionThumbImg.hidden = false;
+      sessionThumbEmpty.hidden = true;
+    } else {
+      sessionThumbImg.hidden = true;
+      sessionThumbEmpty.hidden = false;
+    }
+  }
+
+  function applyAllActiveUniforms() {
+    engine.setUniform('u_seed', seed);
+    engine.setUniform('u_sandboxMode', 1.0);
+    applyPalette(paletteSelect.value);
+    applyGradient(gradientSelect.value);
+    for (const [k, v] of Object.entries(activeParams)) {
+      engine.setUniform(k, v);
+    }
+  }
+
+  async function compileAndPlayActiveStudy() {
+    const targetStudy = activeStudy;
+    if (compiledStudyId === targetStudy.id) {
+      sessionPreview.hidden = true;
+      engine.setPaused(false);
+      pauseBtn.textContent = 'Pause';
+      return;
+    }
+
+    sessionPreview.hidden = true;
+    loader.show(`Compiling ${targetStudy.name}...`, 15);
+    const onProg = (pct, msg) => loader.setProgress(pct, msg);
+
+    let committed = false;
+    try {
+      if (targetStudy.mode === 'pingpong') {
+        committed = await engine.loadPingPongShadersAsync(targetStudy.simShader, targetStudy.displayShader, onProg);
+        if (committed) engine.resetSimulation();
+      } else {
+        committed = await engine.loadFragmentShaderAsync(targetStudy.fragmentShader, onProg);
+      }
+    } finally {
+      loader.hide();
+    }
+    if (!committed) return;
+
+    compiledStudyId = targetStudy.id;
+    applyAllActiveUniforms();
+    engine.setPaused(false);
+    pauseBtn.textContent = 'Pause';
+    stage.stepAndRender(0.016, 0);
+
+    if (thumbTimer) clearTimeout(thumbTimer);
+    thumbTimer = setTimeout(() => {
+      if (compiledStudyId === targetStudy.id && !engine.paused) {
+        saveThumb(`sandbox:${targetStudy.id}`, engine.captureThumbnail());
+      }
+    }, 650);
+  }
+
   function updateSelectedInspector(obj) {
     if (!obj) {
       selectedObjPanel.hidden = true;
@@ -192,39 +348,67 @@ export function mount(root) {
     selectedObjPanel.hidden = false;
     selectedObjTitle.textContent = `${obj.name} (${obj.charge >= 0 ? 'North +' : 'South −'})`;
     objModeSelect.value = obj.mode || 'manual';
+    objZSlider.value = obj.z ?? 0.065;
+    objZVal.textContent = Number(obj.z ?? 0.065).toFixed(2);
     objChargeSlider.value = obj.charge;
     objChargeVal.textContent = Number(obj.charge).toFixed(2);
     objRadiusSlider.value = obj.radius;
     objRadiusVal.textContent = Number(obj.radius).toFixed(3);
   }
 
+  function renderKeyframeMarkers() {
+    kfMarkers.innerHTML = '';
+    const obj = stage.selectedObject;
+    if (!obj) {
+      kfStatus.textContent = 'Select a magnet to keyframe its X/Y/Z & charge.';
+      return;
+    }
+    const track = animator.getTrack(obj);
+    kfStatus.textContent = `${obj.name}: ${track.length} keyframe${track.length === 1 ? '' : 's'}`;
+    for (const kf of track) {
+      const dot = document.createElement('span');
+      dot.className = 'kf-diamond';
+      dot.style.left = `${(kf.t / animator.duration) * 100}%`;
+      dot.title = `${kf.t.toFixed(2)}s`;
+      kfMarkers.appendChild(dot);
+    }
+  }
+
+  animator.onTimeUpdate = (t) => {
+    kfScrubber.value = t;
+    kfTimeVal.textContent = `${t.toFixed(2)}s / ${animator.duration.toFixed(2)}s`;
+    if (stage.selectedObject) {
+      objZSlider.value = stage.selectedObject.z ?? 0.065;
+      objZVal.textContent = Number(stage.selectedObject.z ?? 0.065).toFixed(2);
+    }
+  };
+
+  animator.onTracksChange = () => renderKeyframeMarkers();
+
   stage.onSelectionChange = (obj) => {
     updateSelectedInspector(obj);
+    renderKeyframeMarkers();
+  };
+
+  stage.onObjectTransform = (obj) => {
+    if (obj === stage.selectedObject) {
+      objZSlider.value = obj.z;
+      objZVal.textContent = Number(obj.z).toFixed(2);
+    }
   };
 
   function spawnStarterObjects() {
     stage.clearObjects();
-    const northA = new MagnetNode({
-      name: 'Pole Alpha',
-      x: 0.42,
+    const north = new MagnetNode({
+      name: 'Magnet 1',
+      x: 0.50,
       y: 0.50,
-      radius: 0.082,
+      z: 0.075,
+      radius: 0.072,
       charge: 1.45,
-      mode: 'orbit',
-      orbitRadius: 0.13,
-      orbitSpeed: 0.48,
-      phase: 0.0,
-    });
-    const northB = new MagnetNode({
-      name: 'Pole Beta',
-      x: 0.62,
-      y: 0.50,
-      radius: 0.078,
-      charge: 1.30,
       mode: 'manual',
     });
-    stage.addObject(northA);
-    stage.addObject(northB);
+    stage.addObject(north);
   }
 
   function loadStudy(studyId) {
@@ -232,21 +416,11 @@ export function mount(root) {
     if (!found) return;
     activeStudy = found;
     activeParams = {};
+    compiledStudyId = null;
     studySelect.value = found.id;
     studyDesc.textContent = activeStudy.description;
     paletteGroup.hidden = activeStudy.usesTritone === false;
     gradientGroup.hidden = !activeStudy.usesGradient;
-
-    if (activeStudy.mode === 'pingpong') {
-      engine.loadPingPongShaders(activeStudy.simShader, activeStudy.displayShader);
-      engine.resetSimulation();
-    } else {
-      engine.loadFragmentShader(activeStudy.fragmentShader);
-    }
-
-    engine.setUniform('u_seed', seed);
-    applyPalette(paletteSelect.value);
-    applyGradient(gradientSelect.value);
 
     for (const param of activeStudy.params) {
       let val = param.type === 'toggle' ? (param.default ? 1 : 0) : param.default;
@@ -254,7 +428,6 @@ export function mount(root) {
         val = 0;
       }
       activeParams[param.key] = val;
-      engine.setUniform(param.key, val);
     }
 
     stage.viewMode = activeParams.u_viewMode ?? 0;
@@ -270,6 +443,11 @@ export function mount(root) {
         }
       },
     });
+
+    // Defer GPU compilation until the user clicks Play
+    engine.setPaused(true);
+    pauseBtn.textContent = 'Play';
+    showSessionPreview(activeStudy);
   }
 
   for (const study of SANDBOX_STUDIES) {
@@ -303,7 +481,15 @@ export function mount(root) {
     engine.setMaxFps(preset.fps);
   });
 
+  sessionPlayBtn.addEventListener('click', () => {
+    compileAndPlayActiveStudy();
+  });
+
   pauseBtn.addEventListener('click', () => {
+    if (compiledStudyId !== activeStudy.id) {
+      compileAndPlayActiveStudy();
+      return;
+    }
     const nextPaused = !engine.paused;
     engine.setPaused(nextPaused);
     pauseBtn.textContent = nextPaused ? 'Play' : 'Pause';
@@ -398,6 +584,14 @@ export function mount(root) {
     obj.anchorY = obj.y;
   });
 
+  objZSlider.addEventListener('input', () => {
+    const obj = stage.selectedObject;
+    if (!obj) return;
+    const val = parseFloat(objZSlider.value);
+    obj.z = val;
+    objZVal.textContent = val.toFixed(2);
+  });
+
   objChargeSlider.addEventListener('input', () => {
     const obj = stage.selectedObject;
     if (!obj) return;
@@ -415,6 +609,32 @@ export function mount(root) {
     objRadiusVal.textContent = val.toFixed(3);
   });
 
+  kfPlayBtn.addEventListener('click', () => {
+    animator.playing = !animator.playing;
+    kfPlayBtn.textContent = animator.playing ? '⏸ Pause Timeline' : '▶ Play Timeline';
+  });
+
+  kfAddBtn.addEventListener('click', () => {
+    if (!stage.selectedObject) return;
+    animator.addKeyframe(stage.selectedObject, animator.playhead);
+  });
+
+  kfScrubber.addEventListener('input', () => {
+    animator.playing = false;
+    kfPlayBtn.textContent = '▶ Play Timeline';
+    animator.setPlayhead(parseFloat(kfScrubber.value), stage.objects);
+  });
+
+  kfDelBtn.addEventListener('click', () => {
+    if (!stage.selectedObject) return;
+    animator.removeKeyframeAt(stage.selectedObject, animator.playhead);
+  });
+
+  kfClearBtn.addEventListener('click', () => {
+    if (!stage.selectedObject) return;
+    animator.clearTrack(stage.selectedObject);
+  });
+
   function toggleHud() {
     const collapsed = hud.classList.toggle('collapsed');
     toggleHudBtn.textContent = collapsed ? 'Show GUI (H)' : 'Hide (H)';
@@ -423,6 +643,9 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
+    if ((e.key === 'k' || e.key === 'K') && stage.selectedObject) {
+      animator.addKeyframe(stage.selectedObject, animator.playhead);
+    }
   };
   const onResize = () => {
     engine.resize();
@@ -434,19 +657,20 @@ export function mount(root) {
   window.addEventListener('resize', onResize);
 
   engine.setFrameHook((elapsed, dt) => {
+    animator.step(dt, stage.objects);
     stage.stepAndRender(dt, elapsed);
   });
 
   spawnStarterObjects();
   loadStudy(activeStudy.id);
-  engine.setPaused(false);
   engine.start();
-  stage.stepAndRender(0.016, 0);
 
   return {
     destroy() {
+      if (thumbTimer) clearTimeout(thumbTimer);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
+      loader.destroy();
       engine.destroy();
       root.innerHTML = '';
     },

@@ -109,7 +109,15 @@ async function handleRoute() {
 
   document.title = `toyheart. // ${tool.title.toLowerCase()}`;
   root.innerHTML = `
-    <div class="tool-loading">Loading ${tool.title}...</div>
+    <div class="apple-loader-overlay">
+      <div class="apple-loader-card">
+        <div class="apple-loader-brand">toyheart.</div>
+        <div class="apple-loader-track">
+          <div class="apple-loader-fill" style="width: 18%;"></div>
+        </div>
+        <div class="apple-loader-label">Loading ${tool.title}...</div>
+      </div>
+    </div>
   `;
 
   try {
