@@ -1,4 +1,5 @@
 import { COMMON_GLSL } from './common.glsl.js';
+import { colorSeedParam, GRADIENT_UNIFORMS_GLSL, GRADIENT_SAMPLER_GLSL } from './shader-params.js';
 
 export const fluidAdvectStudy = {
   id: 'fluid-advect',
@@ -17,7 +18,7 @@ export const fluidAdvectStudy = {
     { key: 'u_emitters', label: 'Auto Emitters', group: 'Fluid Physics', min: 0, max: 4, step: 1, default: 2 },
     { key: 'u_sheen', label: 'Liquid Sheen', group: 'Surface & Colour', min: 0.0, max: 1.0, step: 0.02, default: 0.45 },
     { key: 'u_colorSpread', label: 'Colour Spread', group: 'Surface & Colour', min: 0.4, max: 3.0, step: 0.05, default: 1.35 },
-    { key: 'u_colorSeed', label: 'Colour Seed Offset', group: 'Surface & Colour', min: 0.0, max: 100.0, step: 1.0, default: 0.0 },
+    colorSeedParam({ label: 'Colour Phase Offset', group: 'Surface & Colour' }),
   ],
   simShader: /* glsl */ `#version 300 es
 precision highp float;
@@ -189,21 +190,10 @@ uniform float u_seed;
 
 uniform float u_sheen;
 uniform float u_colorSpread;
-uniform float u_colorSeed;
-uniform float u_useGradient;
-uniform vec3 u_gradA;
-uniform vec3 u_gradB;
-uniform vec3 u_gradC;
-uniform vec3 u_gradD;
+${GRADIENT_UNIFORMS_GLSL}
 
 ${COMMON_GLSL}
-
-vec3 sampleFluidGradient(float t, uint colorSeed) {
-  if (u_useGradient > 0.5) {
-    return clamp(u_gradA + u_gradB * cos(6.2831853 * (u_gradC * t + u_gradD)), 0.0, 1.0);
-  }
-  return seededCosinePalette(t, colorSeed);
-}
+${GRADIENT_SAMPLER_GLSL}
 
 void main() {
   vec2 px = 1.5 / max(u_resolution, vec2(1.0));
@@ -220,13 +210,13 @@ void main() {
   float spec = pow(max(dot(normal, lightDir), 0.0), 18.0) * u_sheen;
 
   uint baseSeed = uint(max(u_seed, 0.0) * 1000.0) + 1u;
-  uint colorSeed = baseSeed + uint(max(u_colorSeed, 0.0)) * 97u;
+  uint colorSeed = computeColorSeed(baseSeed);
 
   float gradT = density * u_colorSpread + phase * 0.85 + vort * 0.25;
-  vec3 fluidCol = sampleFluidGradient(gradT, colorSeed);
+  vec3 fluidCol = sampleShaderPalette(gradT, colorSeed);
 
   // Dark fluid substrate with glowing dye filaments and specular highlight
-  vec3 bg = sampleFluidGradient(0.05, colorSeed) * 0.08;
+  vec3 bg = sampleShaderPalette(0.05, colorSeed) * 0.08;
   vec3 col = mix(bg, fluidCol, smoothstep(0.02, 0.72, density));
   col += vec3(0.95, 0.97, 1.0) * spec * smoothstep(0.08, 0.6, density);
 

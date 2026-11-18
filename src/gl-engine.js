@@ -603,6 +603,7 @@ export class GLEngine {
 
   captureThumbnail(maxWidth = 360) {
     try {
+      this.renderFrame();
       const w = this.canvas.width;
       const h = this.canvas.height;
       if (!w || !h) return null;

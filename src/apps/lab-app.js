@@ -15,10 +15,16 @@ import { fractalPrngStudy } from '../shaders/fractal-prng.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { noiseSignalStudy } from '../shaders/noise-signal.js';
+import { bubbleScreenStudy } from '../shaders/bubble-screen.js';
+import { underwaterStudy } from '../shaders/underwater.js';
+import { fallingObjectsStudy } from '../shaders/falling-objects.js';
 import { renderParamControls } from '../core/gui-builder.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { PathStudio } from '../core/path-studio.js';
 import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-reload.js';
+import { buildFiltersDeckHTML, wireFiltersDeck } from '../core/filter-controls.js';
+import { initHudReorder } from '../core/hud-reorder.js';
+import { createThumbnailSession } from '../core/thumbnail-store.js';
 
 const STUDIES = [
   watercolorStudy,
@@ -27,6 +33,9 @@ const STUDIES = [
   zebraRunwayStudy,
   fractalPrngStudy,
   noiseSignalStudy,
+  bubbleScreenStudy,
+  underwaterStudy,
+  fallingObjectsStudy,
 ];
 
 const PERF_PRESETS = {
@@ -44,10 +53,13 @@ export function mount(root) {
     <aside id="hud" class="hud">
       <div class="hud-bar">
         <div class="hud-nav">
-          <a href="#toybox" class="hud-back" title="Return to Toybox">← Toybox</a>
+          <a href="#home" class="hud-back" title="Return to Home">← Home</a>
           <span class="hud-title">Lab</span>
         </div>
-        <button id="toggle-hud" type="button">Hide (H)</button>
+        <div class="hud-bar-actions">
+          <button id="lock-hud" type="button" class="hud-lock-btn" title="Unlock to reorder tabs">🔒</button>
+          <button id="toggle-hud" type="button">Hide (H)</button>
+        </div>
       </div>
 
       <div class="hud-body">
@@ -87,6 +99,8 @@ export function mount(root) {
         </div>
 
         <div id="params-container" class="params-container"></div>
+
+        ${buildFiltersDeckHTML()}
 
         <details class="builder-details">
           <summary>Custom Emitter Paths</summary>
@@ -155,6 +169,8 @@ export function mount(root) {
   const canvas = root.querySelector('#gl-canvas');
   const pathCanvas = root.querySelector('#path-canvas');
   const hud = root.querySelector('#hud');
+  const hudBody = root.querySelector('.hud-body');
+  const lockHudBtn = root.querySelector('#lock-hud');
   const toggleHudBtn = root.querySelector('#toggle-hud');
   const studySelect = root.querySelector('#study-select');
   const paletteGroup = root.querySelector('#palette-group');
@@ -194,6 +210,12 @@ export function mount(root) {
 
   const engine = new GLEngine(canvas);
   const loader = createLoadingOverlay(root);
+  const filters = wireFiltersDeck(root, canvas, engine);
+  initHudReorder({ hud, hudBody, lockBtn: lockHudBtn, storageKey: 'toyheart.hudOrder.lab.v1' });
+  const thumbSession = createThumbnailSession({
+    engine,
+    getCanvases: () => [canvas],
+  });
   const pathStudio = new PathStudio(pathCanvas, (strokes) => {
     pathStatus.textContent =
       strokes.length > 0
@@ -270,6 +292,7 @@ export function mount(root) {
   async function loadStudy(studyId, overrides = null) {
     const found = STUDIES.find((s) => s.id === studyId);
     if (!found) return;
+    thumbSession.captureNow({ force: false });
     activeStudy = found;
     activeParams = {};
     studySelect.value = found.id;
@@ -307,6 +330,10 @@ export function mount(root) {
     applyPalette(paletteSelect.value);
     applyGradient(gradientSelect.value);
     bindFrameHooks();
+    thumbSession.arm({
+      keys: [`lab:${activeStudy.id}`, 'app:lab'],
+      study: activeStudy,
+    });
 
     paramsContainer.innerHTML = '';
     for (const param of activeStudy.params) {
@@ -368,6 +395,7 @@ export function mount(root) {
     const preset = PERF_PRESETS[perfSelect.value] || PERF_PRESETS.balanced;
     engine.setRenderScale(preset.scale);
     engine.setMaxFps(preset.fps);
+    filters.syncScaleDisplay(preset.scale);
   });
 
   pauseBtn.addEventListener('click', () => {
@@ -587,6 +615,7 @@ export function mount(root) {
   return {
     destroy() {
       disconnectWatch();
+      thumbSession.destroy();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
       loader.destroy();

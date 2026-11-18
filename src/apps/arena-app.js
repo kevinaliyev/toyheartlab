@@ -8,6 +8,8 @@ import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { zebraRunwayStudy } from '../shaders/zebra-runway.js';
 import { fractalPrngStudy } from '../shaders/fractal-prng.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
+import { initHudReorder } from '../core/hud-reorder.js';
+import { createThumbnailSession } from '../core/thumbnail-store.js';
 
 const ARENA_GRID_SHADER = {
   id: 'arena-grid',
@@ -66,7 +68,10 @@ export function mount(root) {
           <a href="#toybox" class="hud-back" title="Return to Toybox">← Toybox</a>
           <span class="hud-title">Arena</span>
         </div>
-        <button id="toggle-hud" type="button">Hide (H)</button>
+        <div class="hud-bar-actions">
+          <button id="lock-hud" type="button" class="hud-lock-btn" title="Unlock to reorder tabs">🔒</button>
+          <button id="toggle-hud" type="button">Hide (H)</button>
+        </div>
       </div>
 
       <div class="hud-body">
@@ -238,6 +243,8 @@ export function mount(root) {
   const glCanvas = root.querySelector('#gl-canvas');
   const simCanvas = root.querySelector('#sim-canvas');
   const hud = root.querySelector('#hud');
+  const hudBody = root.querySelector('.hud-body');
+  const lockHudBtn = root.querySelector('#lock-hud');
   const toggleHudBtn = root.querySelector('#toggle-hud');
 
   const restartBtn = root.querySelector('#restart-btn');
@@ -288,6 +295,7 @@ export function mount(root) {
   const engine = new GLEngine(glCanvas);
   const arena = new ArenaSim(simCanvas, engine);
   const loader = createLoadingOverlay(root);
+  initHudReorder({ hud, hudBody, lockBtn: lockHudBtn, storageKey: 'toyheart.hudOrder.arena.v1' });
   let activeParams = {};
   let seed = Math.random() * 100;
 
@@ -558,8 +566,19 @@ export function mount(root) {
   engine.setPaused(false);
   engine.start();
 
+  const thumbSession = createThumbnailSession({
+    engine,
+    getCanvases: () => [glCanvas, simCanvas],
+  });
+  thumbSession.arm({
+    keys: ['app:arena', 'app:toybox'],
+    delayMs: 1200,
+    minElapsedSec: 0.9,
+  });
+
   return {
     destroy() {
+      thumbSession.destroy();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
       arena.sfx.enabled = false;

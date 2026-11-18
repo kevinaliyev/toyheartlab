@@ -1,4 +1,5 @@
 import { COMMON_GLSL } from './common.glsl.js';
+import { colorSeedParam, GRADIENT_UNIFORMS_GLSL, GRADIENT_SAMPLER_GLSL } from './shader-params.js';
 
 export const ferrofluidStudy = {
   id: 'ferrofluid',
@@ -37,7 +38,7 @@ export const ferrofluidStudy = {
     { key: 'u_tension', label: 'Surface Tension (Bridge)', group: 'Fluid Material', min: 0.15, max: 1.0, step: 0.05, default: 0.65 },
     { key: 'u_sheen', label: 'Studio Reflection', group: 'Surface & Light', min: 0.4, max: 1.8, step: 0.05, default: 1.15 },
     { key: 'u_iridescence', label: 'Oil-Slick Coating', group: 'Surface & Light', min: 0.0, max: 1.0, step: 0.02, default: 0.15 },
-    { key: 'u_colorSeed', label: 'Coat Seed Offset', group: 'Surface & Light', min: 0.0, max: 100.0, step: 1.0, default: 0.0 },
+    colorSeedParam({ label: 'Coat / Chrome Offset', group: 'Surface & Light' }),
   ],
   fragmentShader: /* glsl */ `#version 300 es
 precision highp float;
@@ -57,13 +58,7 @@ uniform float u_fluidVolume;
 uniform float u_tension;
 uniform float u_sheen;
 uniform float u_iridescence;
-uniform float u_colorSeed;
-
-uniform float u_useGradient;
-uniform vec3 u_gradA;
-uniform vec3 u_gradB;
-uniform vec3 u_gradC;
-uniform vec3 u_gradD;
+${GRADIENT_UNIFORMS_GLSL}
 
 uniform vec4 u_pointer;     // x, y, down, strength
 uniform vec2 u_pointerVel;  // vx, vy
@@ -73,6 +68,7 @@ uniform vec4 u_objectPos[8];
 uniform vec4 u_objectExtra[8];
 
 ${COMMON_GLSL}
+${GRADIENT_SAMPLER_GLSL}
 
 const float DISH_R = 0.395;
 const float DISH_OUTER_R = 0.422;
@@ -283,13 +279,6 @@ float calcSoftShadow(vec3 ro, vec3 rd) {
   return clamp(res, 0.0, 1.0);
 }
 
-vec3 sampleCoatPalette(float t, uint seed) {
-  if (u_useGradient > 0.5) {
-    return clamp(u_gradA + u_gradB * cos(6.2831853 * (u_gradC * t + u_gradD)), 0.0, 1.0);
-  }
-  return seededCosinePalette(t, seed);
-}
-
 // High-contrast procedural studio light rig (bright softbox strips on a dark dome)
 vec3 sampleStudioRig(vec3 R) {
   float dome = smoothstep(-0.35, 0.85, R.z);
@@ -428,23 +417,24 @@ void main() {
     vec3 refl = reflect(-viewDir, normal);
 
     float NdotV = clamp(dot(normal, viewDir), 0.0, 1.0);
-    // Strong Schlick Fresnel for hyper-reflective liquid metal
-    float F0 = 0.10;
-    float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, 4.2);
+    float chromeMix = colorSeedPhase();
+    // Strong Schlick Fresnel: sweeps from obsidian (F0=0.10) to full liquid chrome (F0=0.72)
+    float F0 = mix(0.10, 0.72, chromeMix);
+    float fresnel = F0 + (1.0 - F0) * pow(1.0 - NdotV, mix(4.2, 2.2, chromeMix));
 
     float ao = calcAO(hitPos, normal) * mix(1.0, 0.65, float(hitSteps) / 64.0);
     vec3 studioRefl = sampleStudioRig(refl) * u_sheen;
 
-    // Optional thin-film iridescence on curved flanks
+    // Optional thin-film iridescence on curved flanks (gradient-aware & phase-shifted)
     if (u_iridescence > 0.005) {
       uint baseSeed = uint(max(u_seed, 0.0) * 1000.0) + 1u;
-      uint coatSeed = baseSeed + uint(max(u_colorSeed, 0.0)) * 97u;
-      vec3 iridCol = sampleCoatPalette((1.0 - NdotV) * 1.6 + hitPos.z * 2.5, coatSeed);
+      uint coatSeed = computeColorSeed(baseSeed);
+      vec3 iridCol = sampleShaderPalette((1.0 - NdotV) * 1.4 + hitPos.z * 2.2, coatSeed);
       studioRefl = mix(studioRefl, studioRefl * (0.45 + 0.95 * iridCol), u_iridescence);
     }
 
-    // Jet-black base albedo (#030305) with zero diffuse lighting
-    vec3 baseAlbedo = vec3(0.012, 0.012, 0.020);
+    // Jet-black obsidian base (0) -> bright liquid mercury base (100)
+    vec3 baseAlbedo = mix(vec3(0.012, 0.012, 0.020), vec3(0.16, 0.18, 0.22), chromeMix);
     vec3 col = mix(baseAlbedo, studioRefl, fresnel) * ao;
 
     outColor = vec4(clamp(col, 0.0, 1.0), 1.0);

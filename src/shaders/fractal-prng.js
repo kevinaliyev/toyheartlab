@@ -1,4 +1,5 @@
 import { COMMON_GLSL } from './common.glsl.js';
+import { colorSeedParam, GRADIENT_UNIFORMS_GLSL, GRADIENT_SAMPLER_GLSL } from './shader-params.js';
 
 export const fractalPrngStudy = {
   id: 'fractal-prng',
@@ -28,7 +29,7 @@ export const fractalPrngStudy = {
     { key: 'u_noiseScale', label: 'Noise Scale', group: 'PRNG & Colour', min: 0.5, max: 6.0, step: 0.1, default: 2.2 },
     { key: 'u_colorSpread', label: 'Colour Spread', group: 'PRNG & Colour', min: 0.2, max: 3.0, step: 0.05, default: 1.15 },
     { key: 'u_colorCycle', label: 'Colour Cycle', group: 'PRNG & Colour', min: 0.0, max: 1.0, step: 0.02, default: 0.18 },
-    { key: 'u_colorSeed', label: 'Colour Seed Offset', group: 'PRNG & Colour', min: 0.0, max: 100.0, step: 1.0, default: 0.0 },
+    colorSeedParam({ label: 'Colour Phase Offset', group: 'PRNG & Colour' }),
     { key: 'u_grain', label: 'PRNG Grain', group: 'PRNG & Colour', min: 0.0, max: 0.12, step: 0.005, default: 0.025 },
   ],
   fragmentShader: /* glsl */ `#version 300 es
@@ -50,23 +51,11 @@ uniform float u_noiseAmt;
 uniform float u_noiseScale;
 uniform float u_colorSpread;
 uniform float u_colorCycle;
-uniform float u_colorSeed;
 uniform float u_grain;
-
-uniform float u_useGradient;
-uniform vec3 u_gradA;
-uniform vec3 u_gradB;
-uniform vec3 u_gradC;
-uniform vec3 u_gradD;
+${GRADIENT_UNIFORMS_GLSL}
 
 ${COMMON_GLSL}
-
-vec3 sampleGradient(float t, uint colorSeed) {
-  if (u_useGradient > 0.5) {
-    return clamp(u_gradA + u_gradB * cos(6.2831853 * (u_gradC * t + u_gradD)), 0.0, 1.0);
-  }
-  return seededCosinePalette(t, colorSeed);
-}
+${GRADIENT_SAMPLER_GLSL}
 
 vec2 rot2(vec2 p, float a) {
   float c = cos(a);
@@ -95,7 +84,7 @@ vec3 shadeEscape(
 
     float trapGlow = exp(-sqrt(minDist) * 2.2);
     float paletteT = mu * u_colorSpread + trapGlow * 0.18 + cycle;
-    vec3 col = sampleGradient(paletteT, colorSeed);
+    vec3 col = sampleShaderPalette(paletteT, colorSeed);
 
     float edgeBoost = pow(clamp(mu * 2.6, 0.0, 1.0), 1.35);
     return col * mix(0.28, 1.15, edgeBoost);
@@ -104,7 +93,7 @@ vec3 shadeEscape(
   float ringTrap = exp(-sqrt(minDist) * 3.2);
   float crossTrap = exp(-axisTrap * 5.5);
   float interiorVal = clamp(ringTrap * 0.65 + crossTrap * 0.45, 0.0, 1.0);
-  vec3 innerCol = sampleGradient(interiorVal * u_colorSpread + cycle, colorSeed + 211u);
+  vec3 innerCol = sampleShaderPalette(interiorVal * u_colorSpread + cycle, colorSeed + 211u);
   return innerCol * (0.18 + 0.85 * interiorVal);
 }
 
@@ -242,7 +231,7 @@ void main() {
   vec2 uv = (v_uv - 0.5) * aspect;
 
   uint baseSeed = uint(max(u_seed, 0.0) * 1000.0) + 1u;
-  uint colorSeed = baseSeed + uint(max(u_colorSeed, 0.0)) * 97u;
+  uint colorSeed = computeColorSeed(baseSeed);
   float t = u_time * u_speed;
 
   vec3 seedVec = prng3f(baseSeed + 3u);

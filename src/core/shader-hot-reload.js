@@ -5,6 +5,9 @@ const SHADER_MODULES = {
   'zebra-runway': { path: '../shaders/zebra-runway.js', exportName: 'zebraRunwayStudy', file: 'zebra-runway.js' },
   'fractal-prng': { path: '../shaders/fractal-prng.js', exportName: 'fractalPrngStudy', file: 'fractal-prng.js' },
   'noise-signal': { path: '../shaders/noise-signal.js', exportName: 'noiseSignalStudy', file: 'noise-signal.js' },
+  'bubble-screen': { path: '../shaders/bubble-screen.js', exportName: 'bubbleScreenStudy', file: 'bubble-screen.js' },
+  underwater: { path: '../shaders/underwater.js', exportName: 'underwaterStudy', file: 'underwater.js' },
+  'falling-objects': { path: '../shaders/falling-objects.js', exportName: 'fallingObjectsStudy', file: 'falling-objects.js' },
 };
 
 /**

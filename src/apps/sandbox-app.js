@@ -5,11 +5,15 @@ import { renderParamControls } from '../core/gui-builder.js';
 import { MagnetNode } from '../objects/magnet-node.js';
 import { ferrofluidStudy } from '../shaders/ferrofluid.js';
 import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
+import { bubbleScreenStudy } from '../shaders/bubble-screen.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { KeyframeAnimator } from '../core/keyframe-animator.js';
 import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-reload.js';
+import { buildFiltersDeckHTML, wireFiltersDeck } from '../core/filter-controls.js';
+import { initHudReorder } from '../core/hud-reorder.js';
+import { getThumbnail, createThumbnailSession } from '../core/thumbnail-store.js';
 
-const SANDBOX_STUDIES = [ferrofluidStudy, fluidAdvectStudy];
+const SANDBOX_STUDIES = [ferrofluidStudy, fluidAdvectStudy, bubbleScreenStudy];
 
 const PERF_PRESETS = {
   eco: { scale: 0.5, fps: 24 },
@@ -17,27 +21,6 @@ const PERF_PRESETS = {
   high: { scale: 1.0, fps: 60 },
   ultra: { scale: 1.0, fps: 120 },
 };
-
-const THUMB_STORAGE_KEY = 'toyheart.shaderThumbs.v1';
-
-function loadThumbCache() {
-  try {
-    return JSON.parse(localStorage.getItem(THUMB_STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function saveThumb(studyId, dataUrl) {
-  if (!dataUrl) return;
-  try {
-    const cache = loadThumbCache();
-    cache[studyId] = dataUrl;
-    localStorage.setItem(THUMB_STORAGE_KEY, JSON.stringify(cache));
-  } catch {
-    // Ignore storage quota errors
-  }
-}
 
 export function mount(root) {
   root.innerHTML = `
@@ -63,10 +46,13 @@ export function mount(root) {
     <aside id="hud" class="hud">
       <div class="hud-bar">
         <div class="hud-nav">
-          <a href="#toybox" class="hud-back" title="Return to Toybox">← Toybox</a>
+          <a href="#home" class="hud-back" title="Return to Home">← Home</a>
           <span class="hud-title">Sandbox</span>
         </div>
-        <button id="toggle-hud" type="button">Hide (H)</button>
+        <div class="hud-bar-actions">
+          <button id="lock-hud" type="button" class="hud-lock-btn" title="Unlock to reorder tabs">🔒</button>
+          <button id="toggle-hud" type="button">Hide (H)</button>
+        </div>
       </div>
 
       <div class="hud-body">
@@ -198,6 +184,8 @@ export function mount(root) {
         </details>
 
         <div id="params-container" class="params-container"></div>
+
+        ${buildFiltersDeckHTML()}
       </div>
     </aside>
   `;
@@ -211,6 +199,8 @@ export function mount(root) {
   const sessionPreviewSub = root.querySelector('#session-preview-sub');
   const sessionPlayBtn = root.querySelector('#session-play-btn');
   const hud = root.querySelector('#hud');
+  const hudBody = root.querySelector('.hud-body');
+  const lockHudBtn = root.querySelector('#lock-hud');
   const toggleHudBtn = root.querySelector('#toggle-hud');
   const studySelect = root.querySelector('#study-select');
   const studyDesc = root.querySelector('#study-desc');
@@ -254,13 +244,18 @@ export function mount(root) {
   const engine = new GLEngine(glCanvas);
   const stage = new Stage2D(simCanvas, engine);
   const loader = createLoadingOverlay(root);
+  const filters = wireFiltersDeck(root, glCanvas, engine);
+  initHudReorder({ hud, hudBody, lockBtn: lockHudBtn, storageKey: 'toyheart.hudOrder.sandbox.v1' });
   const animator = new KeyframeAnimator();
 
   let activeStudy = SANDBOX_STUDIES[0];
   let activeParams = {};
   let seed = Math.random() * 100;
   let compiledStudyId = null;
-  let thumbTimer = null;
+  const thumbSession = createThumbnailSession({
+    engine,
+    getCanvases: () => [glCanvas, simCanvas],
+  });
 
   function applyPalette(paletteKey) {
     const pal = PALETTES[paletteKey] || PALETTES.archival;
@@ -282,7 +277,7 @@ export function mount(root) {
     sessionPreview.hidden = false;
     sessionPreviewTitle.textContent = study.name;
     sessionPreviewSub.textContent = `${study.mode === 'pingpong' ? 'Ping-Pong FBO' : '3D SDF Raymarcher'} · Ready to compile`;
-    const thumb = loadThumbCache()[`sandbox:${study.id}`];
+    const thumb = getThumbnail(`sandbox:${study.id}`);
     if (thumb) {
       sessionThumbImg.src = thumb;
       sessionThumbImg.hidden = false;
@@ -306,11 +301,15 @@ export function mount(root) {
   async function compileAndPlayActiveStudy() {
     const targetStudy = activeStudy;
     if (compiledStudyId === targetStudy.id) {
-      sessionPreview.hidden = true;
+      if (compiledStudyId) thumbSession.captureNow({ force: false });
+
+    sessionPreview.hidden = true;
       engine.setPaused(false);
       pauseBtn.textContent = 'Pause';
       return;
     }
+
+    if (compiledStudyId) thumbSession.captureNow({ force: false });
 
     sessionPreview.hidden = true;
     loader.show(`Compiling ${targetStudy.name}...`, 15);
@@ -335,12 +334,10 @@ export function mount(root) {
     pauseBtn.textContent = 'Pause';
     stage.stepAndRender(0.016, 0);
 
-    if (thumbTimer) clearTimeout(thumbTimer);
-    thumbTimer = setTimeout(() => {
-      if (compiledStudyId === targetStudy.id && !engine.paused) {
-        saveThumb(`sandbox:${targetStudy.id}`, engine.captureThumbnail());
-      }
-    }, 650);
+    thumbSession.arm({
+      keys: [`sandbox:${targetStudy.id}`, 'app:sandbox'],
+      study: targetStudy,
+    });
   }
 
   function updateSelectedInspector(obj) {
@@ -482,6 +479,7 @@ export function mount(root) {
     const preset = PERF_PRESETS[perfSelect.value] || PERF_PRESETS.balanced;
     engine.setRenderScale(preset.scale);
     engine.setMaxFps(preset.fps);
+    filters.syncScaleDisplay(preset.scale);
   });
 
   sessionPlayBtn.addEventListener('click', () => {
@@ -695,7 +693,7 @@ export function mount(root) {
   return {
     destroy() {
       disconnectWatch();
-      if (thumbTimer) clearTimeout(thumbTimer);
+      thumbSession.destroy();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
       loader.destroy();
