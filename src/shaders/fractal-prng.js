@@ -6,7 +6,7 @@ export const fractalPrngStudy = {
   usesTritone: false,
   usesGradient: true,
   description:
-    'Animated Julia & Mandelbrot fractals with 2D PCG PRNG noise, logarithmic colour seeding, seamless deep-zoom looping, and optional preset stacking.',
+    'Fast single-pass Julia & self-similar Feigenbaum Mandelbrot infinite zoom with 2D PCG PRNG noise, shape-preserving equipotential colouring, and PRNG grain.',
   params: [
     {
       key: 'u_zoomMode',
@@ -17,7 +17,7 @@ export const fractalPrngStudy = {
       options: [
         { value: 0, label: 'Static (Julia Orbit)' },
         { value: 1, label: 'Log-Polar Rebuild' },
-        { value: 2, label: 'Mandelbrot Deep Zoom' },
+        { value: 2, label: 'Mandelbrot Infinite Cascade' },
       ],
     },
     { key: 'u_stackPresets', label: 'Stack Presets (Override)', group: 'Fractal & Zoom', type: 'toggle', default: false },
@@ -74,13 +74,13 @@ vec2 rot2(vec2 p, float a) {
   return mat2(c, -s, s, c) * p;
 }
 
-// Scale-invariant logarithmic escape shading + stripe-average interior orbit traps
+// Original smooth escape-time & orbit-trap shading
 vec3 shadeEscape(
   int escapedAt,
+  int maxIter,
   vec2 z,
   float minDist,
   float axisTrap,
-  float stripeAccum,
   uint colorSeed,
   float t,
   float colorPhaseShift
@@ -90,34 +90,28 @@ vec3 shadeEscape(
   if (escapedAt >= 0) {
     float logZn = log2(max(dot(z, z), 1.0001)) * 0.5;
     float nu = log2(max(logZn, 1e-4));
-    float smoothIter = max(1.0, float(escapedAt) + 1.0 - nu);
+    float smoothIter = max(0.0, float(escapedAt) + 1.0 - nu);
+    float mu = clamp(smoothIter / float(maxIter), 0.0, 1.0);
 
-    // Logarithmic potential never saturates at deep zoom levels and never jumps with maxIter
-    float logMu = log2(smoothIter + 1.0) * 0.26;
     float trapGlow = exp(-sqrt(minDist) * 2.2);
-    float stripeMod = stripeAccum * 0.08;
-    float paletteT = logMu * u_colorSpread + trapGlow * 0.16 + stripeMod + cycle;
+    float paletteT = mu * u_colorSpread + trapGlow * 0.18 + cycle;
     vec3 col = sampleGradient(paletteT, colorSeed);
 
-    // Crisp filament contrast along high-iteration boundaries
-    float band = 0.5 + 0.5 * sin(logMu * 12.5);
-    float edgeBoost = mix(0.45, 1.18, smoothstep(0.0, 3.2, logMu) * (0.72 + 0.28 * band));
-    return col * edgeBoost;
+    float edgeBoost = pow(clamp(mu * 2.6, 0.0, 1.0), 1.35);
+    return col * mix(0.28, 1.15, edgeBoost);
   }
 
-  // Interior shading with angular stripe average + geometric orbit traps
-  float ringTrap = exp(-sqrt(minDist) * 3.0);
-  float crossTrap = exp(-axisTrap * 5.0);
-  float interiorVal = clamp(ringTrap * 0.55 + crossTrap * 0.35 + stripeAccum * 0.35, 0.0, 1.0);
+  float ringTrap = exp(-sqrt(minDist) * 3.2);
+  float crossTrap = exp(-axisTrap * 5.5);
+  float interiorVal = clamp(ringTrap * 0.65 + crossTrap * 0.45, 0.0, 1.0);
   vec3 innerCol = sampleGradient(interiorVal * u_colorSpread + cycle, colorSeed + 211u);
-  return innerCol * (0.20 + 0.82 * interiorVal);
+  return innerCol * (0.18 + 0.85 * interiorVal);
 }
 
 vec3 evalJulia(vec2 z, vec2 c, uint colorSeed, float t, float colorPhaseShift) {
   const int MAX_ITER = 48;
   float minDist = 1e6;
   float axisTrap = 1e6;
-  float stripeAccum = 0.0;
   int escapedAt = -1;
 
   for (int i = 0; i < MAX_ITER; i++) {
@@ -125,111 +119,87 @@ vec3 evalJulia(vec2 z, vec2 c, uint colorSeed, float t, float colorPhaseShift) {
     float d2 = dot(z, z);
     minDist = min(minDist, d2);
     axisTrap = min(axisTrap, min(abs(z.x), abs(z.y)));
-    stripeAccum = mix(stripeAccum, 0.5 + 0.5 * sin(3.0 * atan(z.y, z.x)), 0.25);
     if (d2 > 256.0) {
       escapedAt = i;
       break;
     }
   }
 
-  return shadeEscape(escapedAt, z, minDist, axisTrap, stripeAccum, colorSeed, t, colorPhaseShift);
+  return shadeEscape(escapedAt, MAX_ITER, z, minDist, axisTrap, colorSeed, t, colorPhaseShift);
 }
 
 vec3 evalMandelbrot(vec2 c, int maxIter, uint colorSeed, float t, float colorPhaseShift) {
   vec2 z = vec2(0.0);
   float minDist = 1e6;
   float axisTrap = 1e6;
-  float stripeAccum = 0.0;
   int escapedAt = -1;
 
   for (int i = 0; i < 160; i++) {
     if (i >= maxIter) break;
     z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
     float d2 = dot(z, z);
-    minDist = min(minDist, abs(d2 - 0.35));
+    minDist = min(minDist, d2);
     axisTrap = min(axisTrap, min(abs(z.x), abs(z.y)));
-    if (i > 2) {
-      stripeAccum = mix(stripeAccum, 0.5 + 0.5 * sin(4.0 * atan(z.y, z.x)), 0.22);
-    }
     if (d2 > 256.0) {
       escapedAt = i;
       break;
     }
   }
 
-  return shadeEscape(escapedAt, z, minDist, axisTrap, stripeAccum, colorSeed, t, colorPhaseShift);
+  return shadeEscape(escapedAt, maxIter, z, minDist, axisTrap, colorSeed, t, colorPhaseShift);
 }
 
-// High-detail self-similar Mandelbrot boundary targets (Seahorse, Spiral, Scepter, Tendril)
-vec2 getMandelbrotTarget(float sel) {
-  if (sel < 0.25) return vec2(-0.74364388, 0.13182590); // Seahorse Valley Spiral
-  if (sel < 0.50) return vec2(-0.74542800, 0.11300900); // Double Spiral Filament
-  if (sel < 0.75) return vec2(-1.25066000, 0.02012000); // Period-2 Scepter Valley
-  return vec2(-0.10109636, 0.95628651);                 // Top Lightning Dendrite
+vec2 getMandelbrotPathTarget(int idx) {
+  int k = idx - (idx / 4) * 4;
+  if (k == 0) return vec2(-0.74364388, 0.13182590); // Seahorse Valley Spiral
+  if (k == 1) return vec2( 0.28171792, 0.57710528); // Elephant Valley Spiral
+  if (k == 2) return vec2(-0.74542850, 0.11300890); // Double Spiral Filament
+  return vec2(-1.25066000, 0.02012000);              // Period-2 Scepter Valley
 }
 
-// Evaluate one octave of the Mandelbrot Deep Zoom at normalized depth in [0, 1]
-vec3 sampleMandelbrotOctave(
-  vec2 uv,
-  float normDepth,
-  float baseAngle,
-  vec2 mandelTarget,
-  uint baseSeed,
-  uint colorSeed,
-  float t
-) {
-  // Exponential zoom over e^6.4 (~600x per octave, well within 32-bit float & 160 iterations)
-  const float OCTAVE_SPAN = 6.4;
-  float expDepth = normDepth * OCTAVE_SPAN;
-  float mandelScale = exp(-expDepth) * (2.4 / max(u_zoom, 0.1));
-  int dynIter = int(mix(64.0, 160.0, normDepth));
-
-  // Rotate and evaluate PRNG warp in the zooming coordinate frame so noise zooms with the fractal
-  vec2 rotUv = rot2(uv, baseAngle * 0.25 + normDepth * 0.85);
-  float mandelPrng = mix(0.35, 1.85, normDepth);
-  vec2 localWarp = vec2(
-    prngFbm3(rotUv * u_noiseScale + vec2(t * 0.18, -t * 0.14), baseSeed + 31u),
-    prngFbm3(rotUv * u_noiseScale + vec2(-t * 0.15, t * 0.20) + 7.3, baseSeed + 61u)
-  ) - 0.5;
-
-  vec2 c = mandelTarget + (rotUv + localWarp * (u_noiseAmt * mandelPrng * 0.35)) * mandelScale;
-  return evalMandelbrot(c, dynIter, colorSeed, t, normDepth * 0.24);
-}
-
-// Seamless 2-octave exponential Mandelbrot Deep Zoom (works forward & reverse with zero loop jump)
-vec3 evalMandelbrotDeepZoom(
+// Deep single-precision Mandelbrot dive (1x -> ~100,000x) rotating across 4 curated branch targets
+vec3 evalMandelbrotInfiniteCascade(
   vec2 uv,
   float baseAngle,
-  vec2 mandelTarget,
+  vec2 warp,
+  float effNoiseAmt,
   uint baseSeed,
   uint colorSeed,
   float t,
-  out float outSurge
+  out float outPhase
 ) {
   float speed = abs(u_zoomSpeed) < 0.02 ? 0.02 : u_zoomSpeed;
-  float rawCycle = u_time * speed * 0.11;
+  float rawCycle = u_time * speed * 0.075;
+  float cycleIdx = floor(rawCycle);
+  float phase = fract(rawCycle);
+  float zoomDepth = u_zoomSpeed >= 0.0 ? phase : (1.0 - phase);
+  outPhase = zoomDepth;
 
-  // Two overlapping exponential zoom phases offset by 0.5 cycle
-  float phaseA = fract(rawCycle);
-  float phaseB = fract(rawCycle + 0.5);
+  int seedOffset = int(prng1f(baseSeed + 7u) * 4.0);
+  int idxA = int(mod(cycleIdx, 4.0)) + seedOffset;
+  int idxB = idxA + 1;
 
-  // Smooth C1 Hann window weights: wA = 0 at phaseA = 0 and phaseA = 1
-  float wA = sin(3.14159265 * phaseA);
-  wA *= wA;
-  float wB = 1.0 - wA;
+  vec2 targetA = getMandelbrotPathTarget(idxA);
+  // Keep scale above 32-bit float ULP quantization wall (~2,000x max) so pixels stay razor-sharp
+  float scaleA = (1.8 / max(u_zoom, 0.1)) * exp(-zoomDepth * 7.6);
+  int iterA = int(mix(64.0, 140.0, zoomDepth));
 
-  outSurge = 0.5 + 0.5 * sin(rawCycle * 6.2831853);
+  vec2 rotUvA = rot2(uv, baseAngle * 0.2 + zoomDepth * 1.1);
+  vec2 cA = targetA + rotUvA * scaleA + warp * (effNoiseAmt * scaleA * 0.22);
+  vec3 colA = evalMandelbrot(cA, iterA, colorSeed + uint(idxA) * 37u, t, zoomDepth * 0.35);
 
-  if (wA > 0.985) {
-    return sampleMandelbrotOctave(uv, phaseA, baseAngle, mandelTarget, baseSeed, colorSeed, t);
+  // Smoothly blend into the next target path during the final 12% of the dive
+  float blend = smoothstep(0.88, 1.0, phase);
+  if (blend > 0.001) {
+    vec2 targetB = getMandelbrotPathTarget(idxB);
+    float depthB = u_zoomSpeed >= 0.0 ? 0.0 : 1.0;
+    float scaleB = (1.8 / max(u_zoom, 0.1)) * exp(-depthB * 7.6);
+    vec2 rotUvB = rot2(uv, baseAngle * 0.2);
+    vec2 cB = targetB + rotUvB * scaleB + warp * (effNoiseAmt * scaleB * 0.22);
+    vec3 colB = evalMandelbrot(cB, 64, colorSeed + uint(idxB) * 37u, t, 0.0);
+    return mix(colA, colB, blend);
   }
-  if (wB > 0.985) {
-    return sampleMandelbrotOctave(uv, phaseB, baseAngle + 0.425, mandelTarget, baseSeed + 19u, colorSeed, t);
-  }
-
-  vec3 colA = sampleMandelbrotOctave(uv, phaseA, baseAngle, mandelTarget, baseSeed, colorSeed, t);
-  vec3 colB = sampleMandelbrotOctave(uv, phaseB, baseAngle + 0.425, mandelTarget, baseSeed + 19u, colorSeed, t);
-  return colA * wA + colB * wB;
+  return colA;
 }
 
 vec3 evalLogPolar(
@@ -238,8 +208,6 @@ vec3 evalLogPolar(
   vec2 warp,
   float effNoiseAmt,
   vec2 juliaC,
-  vec2 mandelTarget,
-  bool useMandelbrot,
   uint colorSeed,
   float t,
   float depth,
@@ -262,29 +230,11 @@ vec3 evalLogPolar(
   vec2 zA = dir * (exp(uA - 0.5 * P) * zoomScale) + warp * effNoiseAmt;
   vec2 zB = dir * (exp(uB - 0.5 * P) * zoomScale) + warp * effNoiseAmt;
 
-  if (useMandelbrot) {
-    zA = mandelTarget + zA * 0.18;
-    zB = mandelTarget + zB * 0.18;
-  }
+  if (wA > 0.98) return evalJulia(zA, juliaC, colorSeed, t, phaseShift);
+  if (wB > 0.98) return evalJulia(zB, juliaC, colorSeed, t, phaseShift);
 
-  if (wA > 0.98) {
-    return useMandelbrot
-      ? evalMandelbrot(zA, 96, colorSeed, t, phaseShift)
-      : evalJulia(zA, juliaC, colorSeed, t, phaseShift);
-  }
-  if (wB > 0.98) {
-    return useMandelbrot
-      ? evalMandelbrot(zB, 96, colorSeed, t, phaseShift)
-      : evalJulia(zB, juliaC, colorSeed, t, phaseShift);
-  }
-
-  vec3 colA = useMandelbrot
-    ? evalMandelbrot(zA, 96, colorSeed, t, phaseShift)
-    : evalJulia(zA, juliaC, colorSeed, t, phaseShift);
-  vec3 colB = useMandelbrot
-    ? evalMandelbrot(zB, 96, colorSeed, t, phaseShift)
-    : evalJulia(zB, juliaC, colorSeed, t, phaseShift);
-  return colA * wA + colB * wB;
+  return evalJulia(zA, juliaC, colorSeed, t, phaseShift) * wA
+       + evalJulia(zB, juliaC, colorSeed, t, phaseShift) * wB;
 }
 
 void main() {
@@ -304,8 +254,6 @@ void main() {
   vec2 juliaC = vec2(radius * cos(phi), radius * sin(phi))
               + 0.075 * vec2(cos(2.0 * phi + 1.1), sin(3.0 * phi));
 
-  vec2 mandelTarget = getMandelbrotTarget(seedVec.y);
-
   // Single-evaluation 3-octave PRNG fBm domain warp
   vec2 warp = vec2(
     prngFbm3(uv * u_noiseScale + vec2(t * 0.22, -t * 0.17), baseSeed + 31u),
@@ -314,40 +262,26 @@ void main() {
 
   float depth = u_time * u_zoomSpeed;
   float surge = 0.5 + 0.5 * sin(depth * 1.15);
-  float dirBoost = smoothstep(-1.5, 1.5, u_zoomSpeed);
-  float prngMult = mix(0.30, 2.20, surge) * mix(0.65, 1.35, dirBoost);
-  float effNoiseAmt = u_noiseAmt * prngMult;
+  float effNoiseAmt = u_noiseAmt * mix(0.45, 1.65, surge);
   float effGrain = u_grain;
 
   vec3 col;
   bool stacked = u_stackPresets > 0.5;
 
   if (stacked) {
-    // Stack Log-Polar Rebuild onto seamless Mandelbrot Deep Zoom
-    float mandelSurge = 0.0;
-    vec3 deepMandel = evalMandelbrotDeepZoom(uv, baseAngle, mandelTarget, baseSeed, colorSeed, t, mandelSurge);
-    vec3 lpJulia = evalLogPolar(
-      uv, -baseAngle * 0.5, warp, effNoiseAmt, juliaC, mandelTarget,
-      false, colorSeed + 53u, t, depth * 0.85, surge * 0.18
-    );
-    effGrain = u_grain * mix(0.45, 1.8, mandelSurge);
-    col = mix(deepMandel, lpJulia, 0.42);
+    float phase = 0.0;
+    vec3 mandelCol = evalMandelbrotInfiniteCascade(uv, baseAngle, warp, effNoiseAmt, baseSeed, colorSeed, t, phase);
+    vec3 lpJulia = evalLogPolar(uv, -baseAngle * 0.5, warp, effNoiseAmt, juliaC, colorSeed + 53u, t, depth * 0.85, surge * 0.18);
+    col = mix(mandelCol, lpJulia, 0.40);
   } else if (u_zoomMode < 0.5) {
-    // Preset 0: Static Julia Orbit
     vec2 z = rot2(uv * (2.6 / max(u_zoom, 0.1)), baseAngle) + warp * u_noiseAmt;
     col = evalJulia(z, juliaC, colorSeed, t, 0.0);
   } else if (u_zoomMode < 1.5) {
-    // Preset 1: Log-Polar Rebuild (Julia)
     effGrain = u_grain * mix(0.45, 2.0, surge);
-    col = evalLogPolar(
-      uv, baseAngle, warp, effNoiseAmt, juliaC, mandelTarget,
-      false, colorSeed, t, depth, surge * 0.12
-    );
+    col = evalLogPolar(uv, baseAngle, warp, effNoiseAmt, juliaC, colorSeed, t, depth, surge * 0.12);
   } else {
-    // Preset 2: Seamless 2-Octave Mandelbrot Deep Zoom
-    float mandelSurge = 0.0;
-    col = evalMandelbrotDeepZoom(uv, baseAngle, mandelTarget, baseSeed, colorSeed, t, mandelSurge);
-    effGrain = u_grain * mix(0.4, 1.75, mandelSurge);
+    float phase = 0.0;
+    col = evalMandelbrotInfiniteCascade(uv, baseAngle, warp, effNoiseAmt, baseSeed, colorSeed, t, phase);
   }
 
   // Animated PRNG micro-grain

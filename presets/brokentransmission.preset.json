@@ -1,0 +1,21 @@
+{
+  "name": "brokentransmission",
+  "studyId": "noise-signal",
+  "palette": "archival",
+  "gradient": "seeded",
+  "perf": "high",
+  "seed": 66.95928003511594,
+  "params": {
+    "u_signalPreset": 0,
+    "u_speed": 0.2,
+    "u_pixelScale": 3.5,
+    "u_staticAmt": 0.34,
+    "u_scanlines": 0.94,
+    "u_glitch": 1,
+    "u_chroma": 0.46,
+    "u_curvature": 0
+  },
+  "pigments": [],
+  "slug": "brokentransmission",
+  "updatedAt": "2026-11-18T19:21:53.432Z"
+}
