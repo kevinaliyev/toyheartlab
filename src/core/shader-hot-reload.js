@@ -1,5 +1,6 @@
 const SHADER_MODULES = {
   watercolor: { path: '../shaders/watercolor.js', exportName: 'watercolorStudy', file: 'watercolor.js' },
+  charcoal: { path: '../shaders/charcoal.js', exportName: 'charcoalStudy', file: 'charcoal.js' },
   ferrofluid: { path: '../shaders/ferrofluid.js', exportName: 'ferrofluidStudy', file: 'ferrofluid.js' },
   'fluid-advect': { path: '../shaders/fluid-advect.js', exportName: 'fluidAdvectStudy', file: 'fluid-advect.js' },
   'zebra-runway': { path: '../shaders/zebra-runway.js', exportName: 'zebraRunwayStudy', file: 'zebra-runway.js' },

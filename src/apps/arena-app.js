@@ -536,6 +536,7 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
+    if (e.key === 'p' || e.key === 'P') pauseBtn.click();
     if (e.key === 'r' || e.key === 'R') {
       syncConfigsFromUI();
       arena.startMatch();

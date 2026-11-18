@@ -28,6 +28,29 @@ const LETTER_STROKES = [
   [[0.44, 0.10], [0.56, 0.11]],
 ];
 
+// Tiny heart shaped period at the end of "toyheart" (roughly period-sized around x=0.64, y=-0.075)
+const TINY_HEART_PTS = [
+  [0.64, -0.102],
+  [0.615, -0.078],
+  [0.610, -0.056],
+  [0.625, -0.046],
+  [0.64, -0.064],
+  [0.655, -0.046],
+  [0.670, -0.056],
+  [0.665, -0.078],
+  [0.64, -0.102],
+];
+
+// Non-linear stroke orders so brushes paint different parts of "toyheart" simultaneously
+const BRUSH_ORDERS = [
+  // Brush 0: Center-out ("h e a r t" then "t o y")
+  [5, 6, 7, 8, 9, 10, 11, 12, 0, 1, 2, 3, 4],
+  // Brush 1: Outside-in ("t o y" + "t r a" + "h e")
+  [0, 1, 11, 12, 2, 9, 10, 3, 4, 8, 7, 5, 6],
+  // Brush 2: Crossbars, loops & ascenders first
+  [1, 12, 2, 7, 8, 4, 6, 0, 11, 3, 5, 9, 10],
+];
+
 // Precompute cumulative arc-length segments for smooth uniform traversal
 const STROKE_SEGMENTS = LETTER_STROKES.map((pts) => {
   let len = 0;
@@ -54,23 +77,34 @@ function samplePolyline(pts, u) {
   ];
 }
 
-function evalAtDistance(dist, brushIndex, seed) {
-  // Wrap around total length; each pass shifts slightly so layers intersect organically
-  const pass = Math.floor(dist / TOTAL_LEN);
-  const d = ((dist % TOTAL_LEN) + TOTAL_LEN) % TOTAL_LEN;
+function sampleTinyHeartPiece(u, brushIndex, brushCount) {
+  const count = Math.max(1, Math.round(brushCount));
+  const pieceStart = (brushIndex % count) / count;
+  const pieceEnd = ((brushIndex % count) + 1) / count;
+  const tGlobal = pieceStart + u * (pieceEnd - pieceStart);
+  return samplePolyline(TINY_HEART_PTS, tGlobal);
+}
 
-  // Subtle per-brush & per-pass offset so multiple brushes weave & intersect over "toyheart"
+const HEART_PIECE_LEN = 0.22;
+
+function evalAtDistance(dist, brushIndex, seed, brushCount) {
+  const order = BRUSH_ORDERS[brushIndex % BRUSH_ORDERS.length];
+  const passLen = TOTAL_LEN + HEART_PIECE_LEN + 0.08;
+  const pass = Math.floor(dist / passLen);
+  const d = ((dist % passLen) + passLen) % passLen;
+
+  // Subtle per-brush & per-pass micro-offset so overlapping washes stay cohesive
   const angle = (brushIndex * 1.15 + pass * 0.7 + seed) * 0.4;
-  const offsetX = Math.sin(angle * 2.1 + brushIndex) * 0.035;
-  const offsetY = Math.cos(angle * 1.7 + pass) * 0.045;
-  const scale = 1.0 + 0.06 * Math.sin(pass * 1.3 + brushIndex);
+  const offsetX = Math.sin(angle * 2.1 + brushIndex) * 0.008;
+  const offsetY = Math.cos(angle * 1.7 + pass) * 0.010;
+  const scale = 1.0;
 
   let cursor = 0;
-  for (const seg of STROKE_SEGMENTS) {
+  for (let idx = 0; idx < order.length; idx++) {
+    const seg = STROKE_SEGMENTS[order[idx]];
     if (d <= cursor + seg.len) {
       const u = (d - cursor) / seg.len;
       const [x, y] = samplePolyline(seg.pts, u);
-      // Taper lift at start/end of each stroke
       const edgeFade = Math.min(u / 0.12, (1 - u) / 0.12, 1.0);
       return {
         x: x * scale + offsetX,
@@ -80,28 +114,40 @@ function evalAtDistance(dist, brushIndex, seed) {
     }
     cursor += seg.len;
     if (d <= cursor + 0.08) {
-      // Pen is lifted moving between strokes
       const [x, y] = seg.pts[seg.pts.length - 1];
       return { x: x * scale + offsetX, y: y * scale + offsetY, lift: 0 };
     }
     cursor += 0.08;
   }
 
-  return { x: 0, y: 0, lift: 0 };
+  // At the end of each pass, each brush paints its piece of the tiny heart period
+  if (d <= cursor + HEART_PIECE_LEN) {
+    const u = (d - cursor) / HEART_PIECE_LEN;
+    const [x, y] = sampleTinyHeartPiece(u, brushIndex, brushCount);
+    const edgeFade = Math.min(u / 0.15, (1 - u) / 0.15, 1.0);
+    return {
+      x: x * scale + offsetX * 0.5,
+      y: y * scale + offsetY * 0.5,
+      lift: Math.max(0, edgeFade),
+    };
+  }
+
+  const [hx, hy] = sampleTinyHeartPiece(1, brushIndex, brushCount);
+  return { x: hx * scale + offsetX * 0.5, y: hy * scale + offsetY * 0.5, lift: 0 };
 }
 
 /**
  * Samples brush position, previous position, and lift [0..1] along the "toyheart" pattern.
  */
-export function sampleToyheartBrush(time, brushIndex, seed, dt = 0.025) {
+export function sampleToyheartBrush(time, brushIndex, seed, dt = 0.025, brushCount = 3) {
   // Stagger each brush along the word so they paint different letters simultaneously
   const phase = brushIndex * (TOTAL_LEN / 3.2) + seed * 0.5;
   const speedScale = 0.42;
   const dist = time * speedScale + phase;
   const prevDist = (time - dt) * speedScale + phase;
 
-  const curr = evalAtDistance(dist, brushIndex, seed);
-  const prev = evalAtDistance(prevDist, brushIndex, seed);
+  const curr = evalAtDistance(dist, brushIndex, seed, brushCount);
+  const prev = evalAtDistance(prevDist, brushIndex, seed, brushCount);
 
   return {
     pos: [curr.x, curr.y],

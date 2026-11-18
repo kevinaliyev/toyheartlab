@@ -37,8 +37,8 @@ export const watercolorStudy = {
   params: [
     { key: 'u_brushCount', label: 'Brushes', min: 1, max: 6, step: 1, default: 3 },
     { key: 'u_speed', label: 'Stroke Speed', min: 0.1, max: 2.0, step: 0.05, default: 0.65 },
-    { key: 'u_brushSize', label: 'Brush Size', min: 0.02, max: 0.11, step: 0.005, default: 0.052 },
-    { key: 'u_bleed', label: 'Water Bleed', min: 0.05, max: 0.85, step: 0.02, default: 0.42 },
+    { key: 'u_brushSize', label: 'Brush Size', min: 0.018, max: 0.10, step: 0.002, default: 0.044 },
+    { key: 'u_bleed', label: 'Water Bleed', min: 0.02, max: 0.85, step: 0.02, default: 0.28 },
     { key: 'u_refraction', label: 'Water Fisheye', min: 0.0, max: 1.0, step: 0.05, default: 0.55 },
     { key: 'u_fade', label: 'Slow Fade', min: 0.0, max: 0.005, step: 0.0002, default: 0.0 },
     { key: 'u_grain', label: 'Paper Tooth', min: 0.0, max: 0.14, step: 0.005, default: 0.05 },
@@ -51,7 +51,7 @@ export const watercolorStudy = {
 
     for (let i = 0; i < 6; i++) {
       if (i < count) {
-        const sample = sampleToyheartBrush(t, i, seed, dt);
+        const sample = sampleToyheartBrush(t, i, seed, dt, count);
         engine.setUniform(`u_brushPos${i}`, sample.pos);
         engine.setUniform(`u_brushPrev${i}`, sample.prev);
         engine.setUniform(`u_brushLift${i}`, sample.lift);
@@ -110,16 +110,17 @@ vec4 applyBrush(vec2 p, vec2 pos, vec2 prev, float lift, vec3 absColor, float ra
   float dist = sdPaintbrushSegment(p, prev, pos, strokeAngle);
   if (dist > radius * 1.45) return vec4(0.0);
 
-  // Soft, loaded paintbrush falloff (feathered edge, never razor-hard)
-  float radial = smoothstep(radius, radius * 0.05, dist);
-  float tuft = 0.72 + 0.28 * brushNoise(p * 24.0 + vec2(idx * 4.1, 0.0), strokeAngle, 2.8);
-  float deposit = radial * tuft * lift;
+  // Authentic watercolor brush falloff: crisp wet-edge rim with textured bristle wash
+  float radial = smoothstep(radius, radius * 0.28, dist);
+  float rim = smoothstep(radius * 0.45, radius * 0.92, dist) * (1.0 - smoothstep(radius * 0.92, radius * 1.08, dist));
+  float tuft = 0.68 + 0.32 * brushNoise(p * 28.0 + vec2(idx * 4.1, 0.0), strokeAngle, 2.8);
+  float deposit = (radial * 0.85 + rim * 0.35) * tuft * lift;
 
-  // True subtractive pigment accumulation so intersecting colours mix physically (e.g. blue + ochre -> green)
-  float strength = 0.042 * deposit;
-  vec3 headroom = max(vec3(0.0), vec3(3.6) - curPigment);
-  vec3 addedPigment = absColor * strength * (headroom / 3.6);
-  float addedWet = radial * lift * 0.92;
+  // Subtractive pigment accumulation capped for luminous translucent washes (never muddy black)
+  float strength = 0.034 * deposit;
+  vec3 headroom = max(vec3(0.0), vec3(1.45) - curPigment);
+  vec3 addedPigment = absColor * strength * (headroom / 1.45);
+  float addedWet = radial * lift * 0.85;
 
   return vec4(addedPigment, addedWet);
 }
@@ -148,15 +149,15 @@ void main() {
   wetness = mix(wetness, avgN.a, flowRate * 0.55);
   wetness = max(0.0, wetness * 0.962 - 0.004);
 
-  // Quadratic wetness falloff: only freshly wet strokes bloom; settled layers stay crisp
+  // Quadratic wetness falloff: brief capillary bloom, then dries crisp into paper tooth
   float activeWet = wetness * wetness;
-  float diffStrength = clamp(activeWet * flowRate * 0.24, 0.0, 0.18);
+  float diffStrength = clamp(activeWet * flowRate * 0.14, 0.0, 0.10);
   pigment = mix(pigment, avgN.rgb, diffStrength);
 
-  // Subtle wet-edge pooling as paint dries
+  // Watercolor drying rim (cauliflower pigment pooling at wet boundaries)
   float edgeGrad = length(avgN.rgb - pigment);
-  float dryingRim = smoothstep(0.45, 0.05, wetness) * wetness * 3.0;
-  pigment += normalize(pigment + 1e-4) * edgeGrad * dryingRim * 0.028;
+  float dryingRim = smoothstep(0.45, 0.04, wetness) * wetness * 3.2;
+  pigment += normalize(pigment + 1e-4) * edgeGrad * dryingRim * 0.065;
 
   pigment = max(vec3(0.0), pigment * (1.0 - u_fade));
 
@@ -188,7 +189,7 @@ void main() {
   res = applyBrush(paintP, u_brushPos5, u_brushPrev5, u_brushLift5, u_brushColor5, u_brushSize, 5.0, pigment);
   pigment += res.rgb; wetness = max(wetness, res.a);
 
-  outState = vec4(clamp(pigment, 0.0, 3.6), clamp(wetness, 0.0, 1.0));
+  outState = vec4(clamp(pigment, 0.0, 1.45), clamp(wetness, 0.0, 1.0));
 }
 `,
   displayShader: /* glsl */ `#version 300 es
@@ -224,15 +225,15 @@ void main() {
   vec2 refractedFrag = refractedUV * u_resolution;
   float grain = paperGrain(refractedFrag);
 
-  // Paper-valley granulation
-  vec3 modulatedPigment = pigment * (1.0 + grain * u_grain * 4.2);
+  // Paper-valley granulation (pigment settles into valleys, paper shines through peaks)
+  vec3 modulatedPigment = pigment * (1.0 + grain * u_grain * 5.2);
 
-  // Progressive opacity: translucent washes lose transparency as intersecting layers accumulate
+  // Luminous Beer-Lambert watercolor wash over archival paper
   float density = dot(modulatedPigment, vec3(0.333));
-  vec3 translucent = u_colorLight * exp(-modulatedPigment * 1.15);
-  vec3 opaqueBody = exp(-modulatedPigment * 1.75) * 0.90;
-  float opacity = smoothstep(0.45, 2.2, density);
-  vec3 col = mix(translucent, opaqueBody, opacity * 0.72);
+  vec3 translucent = u_colorLight * exp(-modulatedPigment * 0.92);
+  vec3 deepWash = u_colorLight * exp(-modulatedPigment * 1.18);
+  float opacity = smoothstep(0.35, 1.35, density);
+  vec3 col = mix(translucent, deepWash, opacity * 0.55);
 
   col += grain * u_grain * 0.65;
 

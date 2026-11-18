@@ -329,6 +329,14 @@ export function mount(root) {
       engine.setUniform(p.key, def);
     }
 
+    const pigmentHexes = found.pigmentScale ? found.pigmentScale.defaults.map((d) => d.hex) : [];
+    if (found.pigmentScale) {
+      const { defaults, uniformPrefix, toUniform } = found.pigmentScale;
+      defaults.forEach((d, idx) => {
+        engine.setUniform(`${uniformPrefix}${idx}`, toUniform(d.hex));
+      });
+    }
+
     renderParamControls({
       container: paramsContainer,
       params: found.params,
@@ -336,6 +344,11 @@ export function mount(root) {
       onChange: (key, val) => {
         activeParams[key] = val;
         engine.setUniform(key, val);
+      },
+      pigmentScale: found.pigmentScale || null,
+      pigmentHexes,
+      onPigmentChange: (idx, _hex, uniformVal) => {
+        engine.setUniform(`${found.pigmentScale.uniformPrefix}${idx}`, uniformVal);
       },
     });
 
@@ -564,6 +577,8 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
+    if (e.key === 'p' || e.key === 'P') pauseBtn.click();
+    if (e.key === 'r' || e.key === 'R') reseedBtn.click();
   };
   const onResize = () => applyFrameAspect();
 

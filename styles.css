@@ -320,6 +320,18 @@ body,
 .hud.collapsed {
   width: auto;
   padding: 0.4rem 0.6rem;
+  opacity: 0.2;
+  transition: opacity 0.18s ease;
+}
+
+.hud.collapsed:hover,
+.hud.collapsed:focus-within {
+  opacity: 1;
+}
+
+.hud.collapsed .hud-bar-actions button:hover {
+  background: #fbfaf7;
+  color: #111111;
 }
 
 .hud.collapsed .hud-body {

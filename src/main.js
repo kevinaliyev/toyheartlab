@@ -9,25 +9,22 @@ const HOME_OPTIONS = [
     id: 'lab',
     index: '01',
     title: 'Lab',
-    subtitle: 'Procedural Shader Studies & Exporter',
-    description:
-      'Author, tune, save presets, and export self-contained WebGL2 fragment & ping-pong shaders.',
+    subtitle: 'Procedural Shader Viewer & Preset Store',
+    description: 'Configure uninteractive shaders.',
   },
   {
     id: 'sandbox',
     index: '02',
     title: 'Sandbox',
     subtitle: 'Interactive 2D Fields & Ferrofluid Dish',
-    description:
-      'Spawn, drag, and orbit 2D magnetic poles over finite-volume ferrofluid and fluid advection shaders.',
+    description: 'Interact with shader modules using sandbox controllers.',
   },
   {
     id: 'toybox',
     index: '03',
     title: 'Toybox',
     subtitle: 'Standalone Apps & Mini-Experiences',
-    description:
-      'Launch self-contained interactive toys, simulations, and arena experiments built on toyheart.',
+    description: 'Toys :)',
   },
 ];
 
@@ -75,6 +72,8 @@ function teardownActiveApp() {
 }
 
 const HOME_SHADERS = [
+  () => import('./shaders/watercolor.js').then((m) => m.watercolorStudy),
+  () => import('./shaders/charcoal.js').then((m) => m.charcoalStudy),
   () => import('./shaders/zebra-runway.js').then((m) => m.zebraRunwayStudy),
   () => import('./shaders/fluid-advect.js').then((m) => m.fluidAdvectStudy),
   () => import('./shaders/fractal-prng.js').then((m) => m.fractalPrngStudy),
@@ -114,20 +113,36 @@ async function renderSplash(token) {
     ]);
     if (token !== routeToken) return;
 
-    const engine = new GLEngine(canvas);
+    let destroyed = false;
+    let engine = new GLEngine(canvas);
     engine.setRenderScale(0.75);
     engine.setMaxFps(30);
 
-    let destroyed = false;
+    const onResize = () => engine?.resize();
+    const onKeyDown = (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        teardownActiveApp();
+        renderSplash(routeToken);
+      } else if (e.key === 'p' || e.key === 'P') {
+        if (engine) {
+          engine.destroy();
+          engine = null;
+        }
+        canvas.hidden = true;
+      }
+    };
+
     activeApp = {
       destroy() {
         destroyed = true;
         window.removeEventListener('resize', onResize);
-        engine.destroy();
+        window.removeEventListener('keydown', onKeyDown);
+        engine?.destroy();
+        engine = null;
       },
     };
-    const onResize = () => engine.resize();
     window.addEventListener('resize', onResize);
+    window.addEventListener('keydown', onKeyDown);
 
     if (study.mode === 'pingpong') {
       await engine.loadPingPongShadersAsync(study.simShader, study.displayShader);
@@ -144,7 +159,9 @@ async function renderSplash(token) {
     const gradList = Object.values(GRADIENTS);
     const grad = gradList[Math.floor(Math.random() * gradList.length)];
 
-    engine.setUniform('u_seed', Math.random() * 100);
+    const homeSeed = Math.random() * 100;
+    const homeParams = {};
+    engine.setUniform('u_seed', homeSeed);
     engine.setUniform('u_colorDark', pal.dark);
     engine.setUniform('u_colorMid', pal.mid);
     engine.setUniform('u_colorLight', pal.light);
@@ -159,7 +176,21 @@ async function renderSplash(token) {
       if (p.type === 'select' && p.options?.length) {
         val = p.options[Math.floor(Math.random() * p.options.length)].value;
       }
+      homeParams[p.key] = val;
       engine.setUniform(p.key, val);
+    }
+
+    if (study.pigmentScale) {
+      const { defaults, uniformPrefix, toUniform } = study.pigmentScale;
+      defaults.forEach((d, idx) => {
+        engine.setUniform(`${uniformPrefix}${idx}`, toUniform(d.hex));
+      });
+    }
+
+    if (study.onFrame) {
+      engine.setFrameHook((elapsed) => {
+        study.onFrame(engine, elapsed, homeParams, homeSeed);
+      });
     }
 
     engine.setPaused(false);
@@ -185,7 +216,7 @@ function renderMenuScreen({ sectionLabel, items, backLinkHtml = '', showExportTh
         </div>
         ${thumbHtml}
         <h2 class="toybox-card-title">${item.title}</h2>
-        <div class="toybox-card-sub">${item.subtitle}</div>
+        ${item.subtitle ? `<div class="toybox-card-sub">${item.subtitle}</div>` : ''}
         <p class="toybox-card-desc">${item.description}</p>
       </a>
     `;

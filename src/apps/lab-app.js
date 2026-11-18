@@ -567,7 +567,11 @@ export function mount(root) {
   const onKeyDown = (e) => {
     if (e.target?.tagName === 'INPUT' && e.target?.type === 'text') return;
     if (e.key === 'h' || e.key === 'H') toggleHud();
-    if (e.shiftKey && (e.key === 'r' || e.key === 'R')) hotReloadActiveShader();
+    if (e.key === 'p' || e.key === 'P') pauseBtn.click();
+    if (e.key === 'r' || e.key === 'R') {
+      if (e.shiftKey) hotReloadActiveShader();
+      else reseedBtn.click();
+    }
   };
   const onResize = () => {
     engine.resize();

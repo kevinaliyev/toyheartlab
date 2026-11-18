@@ -1,4 +1,5 @@
 import { watercolorStudy } from './watercolor.js';
+import { charcoalStudy } from './charcoal.js';
 import { zebraRunwayStudy } from './zebra-runway.js';
 import { fractalPrngStudy } from './fractal-prng.js';
 import { fluidAdvectStudy } from './fluid-advect.js';
@@ -10,6 +11,7 @@ import { fallingObjectsStudy } from './falling-objects.js';
 
 export const ALL_STUDIES = [
   watercolorStudy,
+  charcoalStudy,
   ferrofluidStudy,
   fluidAdvectStudy,
   zebraRunwayStudy,
