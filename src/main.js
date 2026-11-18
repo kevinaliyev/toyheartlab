@@ -43,13 +43,96 @@ function teardownActiveApp() {
   }
 }
 
-function renderHome() {
+const HOME_SHADERS = [
+  () => import('./shaders/zebra-runway.js').then((m) => m.zebraRunwayStudy),
+  () => import('./shaders/fluid-advect.js').then((m) => m.fluidAdvectStudy),
+  () => import('./shaders/fractal-prng.js').then((m) => m.fractalPrngStudy),
+  () => import('./shaders/noise-signal.js').then((m) => m.noiseSignalStudy),
+];
+
+async function renderHome(token) {
   document.title = 'toyheart.';
   root.innerHTML = `
     <main class="home-screen">
+      <canvas id="home-bg-canvas" class="home-bg-canvas"></canvas>
       <a href="#toybox" class="home-wordmark" aria-label="Enter Toybox">toyheart.</a>
     </main>
   `;
+
+  const canvas = root.querySelector('#home-bg-canvas');
+  if (!canvas) return;
+
+  try {
+    const lastIdx = Number(sessionStorage.getItem('toyheart.lastHomeShaderIdx'));
+    const candidates = HOME_SHADERS.map((loader, idx) => ({ loader, idx })).filter(
+      (item) => item.idx !== lastIdx
+    );
+    const chosen = candidates[Math.floor(Math.random() * candidates.length)] || {
+      loader: HOME_SHADERS[0],
+      idx: 0,
+    };
+    sessionStorage.setItem('toyheart.lastHomeShaderIdx', String(chosen.idx));
+    const pick = chosen.loader;
+    const [{ GLEngine }, { PALETTES, GRADIENTS }, study] = await Promise.all([
+      import('./gl-engine.js'),
+      import('./palettes.js'),
+      pick(),
+    ]);
+    if (token !== routeToken) return;
+
+    const engine = new GLEngine(canvas);
+    engine.setRenderScale(0.75);
+    engine.setMaxFps(30);
+
+    let destroyed = false;
+    activeApp = {
+      destroy() {
+        destroyed = true;
+        window.removeEventListener('resize', onResize);
+        engine.destroy();
+      },
+    };
+    const onResize = () => engine.resize();
+    window.addEventListener('resize', onResize);
+
+    if (study.mode === 'pingpong') {
+      await engine.loadPingPongShadersAsync(study.simShader, study.displayShader);
+    } else {
+      await engine.loadFragmentShaderAsync(study.fragmentShader);
+    }
+    if (destroyed || token !== routeToken) {
+      engine.destroy();
+      return;
+    }
+
+    const palList = Object.values(PALETTES);
+    const pal = palList[Math.floor(Math.random() * palList.length)];
+    const gradList = Object.values(GRADIENTS);
+    const grad = gradList[Math.floor(Math.random() * gradList.length)];
+
+    engine.setUniform('u_seed', Math.random() * 100);
+    engine.setUniform('u_colorDark', pal.dark);
+    engine.setUniform('u_colorMid', pal.mid);
+    engine.setUniform('u_colorLight', pal.light);
+    engine.setUniform('u_useGradient', grad.useSeed ? 0.0 : 1.0);
+    engine.setUniform('u_gradA', grad.a);
+    engine.setUniform('u_gradB', grad.b);
+    engine.setUniform('u_gradC', grad.c);
+    engine.setUniform('u_gradD', grad.d);
+
+    for (const p of study.params || []) {
+      let val = p.type === 'toggle' ? (p.default ? 1 : 0) : p.default;
+      if (p.type === 'select' && p.options?.length) {
+        val = p.options[Math.floor(Math.random() * p.options.length)].value;
+      }
+      engine.setUniform(p.key, val);
+    }
+
+    engine.setPaused(false);
+    engine.start();
+  } catch {
+    // Fallback cleanly to archival background if WebGL is unavailable
+  }
 }
 
 function renderToybox() {
@@ -92,7 +175,7 @@ async function handleRoute() {
   teardownActiveApp();
 
   if (!hash) {
-    renderHome();
+    renderHome(token);
     return;
   }
 
