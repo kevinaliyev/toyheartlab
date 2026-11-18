@@ -9,15 +9,7 @@ import {
   downloadTextFile,
 } from '../preset-store.js';
 import { buildShaderObject, serializeShaderModule } from '../shader-exporter.js';
-import { watercolorStudy } from '../shaders/watercolor.js';
-import { zebraRunwayStudy } from '../shaders/zebra-runway.js';
-import { fractalPrngStudy } from '../shaders/fractal-prng.js';
-import { fluidAdvectStudy } from '../shaders/fluid-advect.js';
-import { ferrofluidStudy } from '../shaders/ferrofluid.js';
-import { noiseSignalStudy } from '../shaders/noise-signal.js';
-import { bubbleScreenStudy } from '../shaders/bubble-screen.js';
-import { underwaterStudy } from '../shaders/underwater.js';
-import { fallingObjectsStudy } from '../shaders/falling-objects.js';
+import { ALL_STUDIES } from '../shaders/studies.js';
 import { renderParamControls } from '../core/gui-builder.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { PathStudio } from '../core/path-studio.js';
@@ -25,18 +17,9 @@ import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-r
 import { buildFiltersDeckHTML, wireFiltersDeck } from '../core/filter-controls.js';
 import { initHudReorder } from '../core/hud-reorder.js';
 import { createThumbnailSession } from '../core/thumbnail-store.js';
+import { populateStudySelect } from '../shaders/shader-params.js';
 
-const STUDIES = [
-  watercolorStudy,
-  ferrofluidStudy,
-  fluidAdvectStudy,
-  zebraRunwayStudy,
-  fractalPrngStudy,
-  noiseSignalStudy,
-  bubbleScreenStudy,
-  underwaterStudy,
-  fallingObjectsStudy,
-];
+const STUDIES = ALL_STUDIES;
 
 const PERF_PRESETS = {
   eco: { scale: 0.5, fps: 24 },
@@ -366,12 +349,7 @@ export function mount(root) {
     });
   }
 
-  for (const study of STUDIES) {
-    const opt = document.createElement('option');
-    opt.value = study.id;
-    opt.textContent = study.name;
-    studySelect.appendChild(opt);
-  }
+  populateStudySelect(studySelect, STUDIES);
 
   for (const pal of Object.values(PALETTES)) {
     const opt = document.createElement('option');

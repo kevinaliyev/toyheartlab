@@ -10,6 +10,7 @@ import { fractalPrngStudy } from '../shaders/fractal-prng.js';
 import { createLoadingOverlay } from '../core/loading-bar.js';
 import { initHudReorder } from '../core/hud-reorder.js';
 import { createThumbnailSession } from '../core/thumbnail-store.js';
+import { populateStudySelect } from '../shaders/shader-params.js';
 
 const ARENA_GRID_SHADER = {
   id: 'arena-grid',
@@ -317,12 +318,7 @@ export function mount(root) {
   }
   updateGimmickDescriptions();
 
-  for (const study of BACKDROP_SHADERS) {
-    const opt = document.createElement('option');
-    opt.value = study.id;
-    opt.textContent = study.name;
-    studySelect.appendChild(opt);
-  }
+  populateStudySelect(studySelect, BACKDROP_SHADERS);
 
   for (const pal of Object.values(PALETTES)) {
     const opt = document.createElement('option');

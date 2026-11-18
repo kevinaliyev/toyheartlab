@@ -40,12 +40,27 @@ const TOYBOX_APPS = [
     description:
       'Simulate autonomous 2D fighters with unique weapons, parries, physics rules, and reactive shader backdrops.',
   },
+  {
+    id: 'gif-builder',
+    index: '02',
+    title: 'Loop / GIF Studio',
+    subtitle: 'WebM Loop & WebP Spritesheet Builder',
+    description:
+      'Frame, boomerang-loop, stamp, and export Lab shaders into compact WebM loops, WebP frames, and spritesheet atlases.',
+  },
 ];
 
 const APPS = [
   { id: 'lab', title: 'Lab', backHref: '#home', backLabel: 'Home', loader: () => import('./apps/lab-app.js') },
   { id: 'sandbox', title: 'Sandbox', backHref: '#home', backLabel: 'Home', loader: () => import('./apps/sandbox-app.js') },
   { id: 'arena', title: 'Arena', backHref: '#toybox', backLabel: 'Toybox', loader: () => import('./apps/arena-app.js') },
+  {
+    id: 'gif-builder',
+    title: 'Loop / GIF Studio',
+    backHref: '#toybox',
+    backLabel: 'Toybox',
+    loader: () => import('./apps/gif-builder-app.js'),
+  },
 ];
 
 function teardownActiveApp() {

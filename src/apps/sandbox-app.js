@@ -12,6 +12,7 @@ import { reloadShaderModule, connectShaderHotReload } from '../core/shader-hot-r
 import { buildFiltersDeckHTML, wireFiltersDeck } from '../core/filter-controls.js';
 import { initHudReorder } from '../core/hud-reorder.js';
 import { getThumbnail, createThumbnailSession } from '../core/thumbnail-store.js';
+import { populateStudySelect } from '../shaders/shader-params.js';
 
 const SANDBOX_STUDIES = [ferrofluidStudy, fluidAdvectStudy, bubbleScreenStudy];
 
@@ -430,7 +431,7 @@ export function mount(root) {
       activeParams[param.key] = val;
     }
 
-    stage.viewMode = activeParams.u_viewMode ?? 0;
+    stage.viewMode = activeParams.u_viewMode ?? (activeStudy.id === 'ferrofluid' ? 1 : 0);
 
     renderParamControls({
       container: paramsContainer,
@@ -450,12 +451,7 @@ export function mount(root) {
     showSessionPreview(activeStudy);
   }
 
-  for (const study of SANDBOX_STUDIES) {
-    const opt = document.createElement('option');
-    opt.value = study.id;
-    opt.textContent = study.name;
-    studySelect.appendChild(opt);
-  }
+  populateStudySelect(studySelect, SANDBOX_STUDIES);
 
   for (const pal of Object.values(PALETTES)) {
     const opt = document.createElement('option');

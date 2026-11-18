@@ -601,7 +601,7 @@ export class GLEngine {
     this.elapsed = 0;
   }
 
-  captureThumbnail(maxWidth = 360) {
+  captureThumbnail(maxWidth = 960) {
     try {
       this.renderFrame();
       const w = this.canvas.width;
@@ -614,8 +614,11 @@ export class GLEngine {
       tmp.width = tw;
       tmp.height = th;
       const ctx = tmp.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(this.canvas, 0, 0, tw, th);
-      return tmp.toDataURL('image/jpeg', 0.72);
+      const webp = tmp.toDataURL('image/webp', 0.90);
+      return webp.startsWith('data:image/webp') ? webp : tmp.toDataURL('image/png');
     } catch {
       return null;
     }

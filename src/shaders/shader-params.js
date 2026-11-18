@@ -3,6 +3,49 @@
  * Designed to be imported by shaders and reused across Lab, Sandbox, and standalone Toybox apps.
  */
 
+export function populateStudySelect(selectEl, studies) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+
+  const group2d = document.createElement('optgroup');
+  group2d.label = '2D Shaders (Fullscreen Quad)';
+
+  const group25d = document.createElement('optgroup');
+  group25d.label = '2.5D / Raymarched SDF (Z-Axis Quad)';
+
+  const group3d = document.createElement('optgroup');
+  group3d.label = '3D Shaders (True 3D)';
+
+  for (const study of studies) {
+    const opt = document.createElement('option');
+    opt.value = study.id;
+    opt.textContent = study.name;
+    if (study.dimension === '3d') {
+      group3d.appendChild(opt);
+    } else if (study.dimension === '2.5d') {
+      group25d.appendChild(opt);
+    } else {
+      group2d.appendChild(opt);
+    }
+  }
+
+  if (group2d.children.length > 0) {
+    selectEl.appendChild(group2d);
+  }
+
+  if (group25d.children.length > 0) {
+    selectEl.appendChild(group25d);
+  }
+
+  if (group3d.children.length === 0) {
+    const emptyOpt = document.createElement('option');
+    emptyOpt.disabled = true;
+    emptyOpt.textContent = 'Coming soon — True 3D pipeline';
+    group3d.appendChild(emptyOpt);
+  }
+  selectEl.appendChild(group3d);
+}
+
 export function colorSeedParam({
   label = 'Colour Seed Offset',
   group = 'Surface & Light',

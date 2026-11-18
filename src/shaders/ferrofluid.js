@@ -4,24 +4,14 @@ import { colorSeedParam, GRADIENT_UNIFORMS_GLSL, GRADIENT_SAMPLER_GLSL } from '.
 export const ferrofluidStudy = {
   id: 'ferrofluid',
   name: 'Magnetic Ferrofluid',
+  dimension: '2.5d',
   description:
-    'True 3D SDF raymarched ferrofluid in an isometric lab dish. Lowering magnets pulls 3D liquid bridges upward via smooth-minimum until the fluid clings to the magnet and erupts into sharp Rosensweig spikes.',
+    '2.5D / Raymarched 3D SDF ferrofluid (uses a Z axis on a fullscreen quad) in an isometric lab dish. Lowering magnets pulls 3D liquid bridges upward until the fluid clings to the magnet and erupts into Rosensweig spikes.',
   mode: 'single',
   usesTritone: false,
   usesGradient: true,
   supportsObjects: true,
   params: [
-    {
-      key: 'u_viewMode',
-      label: 'Camera View',
-      group: 'Stage & View',
-      type: 'select',
-      default: 1,
-      options: [
-        { value: 1, label: 'Isometric Dish (3D)' },
-        { value: 0, label: '2D Top-Down' },
-      ],
-    },
     {
       key: 'u_bgStyle',
       label: 'Lab Surface',
@@ -50,7 +40,6 @@ uniform float u_time;
 uniform vec2 u_resolution;
 uniform float u_seed;
 
-uniform float u_viewMode;
 uniform float u_bgStyle;
 uniform float u_camYaw;
 uniform float u_camPitch;
@@ -296,9 +285,6 @@ vec3 sampleStudioRig(vec3 R) {
 }
 
 vec2 screenToPlaneXY(float sx, float sy, float zPlane, vec3 camRight, vec3 camUp, vec3 camForward) {
-  if (u_viewMode < 0.5) {
-    return vec2(sx, sy);
-  }
   float u = sx / ISO_SCALE;
   float v = (sy - ISO_OFFSET_Y) / ISO_SCALE;
   vec3 ro = camRight * u + camUp * v - camForward * 0.85;
@@ -351,7 +337,7 @@ void main() {
   float aspect = u_resolution.x / max(u_resolution.y, 1.0);
   float sx = (v_uv.x - 0.5) * aspect;
   float sy = v_uv.y - 0.5;
-  bool isIso = u_viewMode >= 0.5;
+  bool isIso = true;
 
   // Orthonormal orbital camera basis around dish focus point (0, 0, 0)
   float cy = cos(u_camYaw);

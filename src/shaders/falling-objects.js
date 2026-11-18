@@ -4,6 +4,7 @@ import { colorSeedParam, GRADIENT_UNIFORMS_GLSL, GRADIENT_SAMPLER_GLSL } from '.
 export const fallingObjectsStudy = {
   id: 'falling-objects',
   name: 'Falling 3D Objects',
+  dimension: '2.5d',
   description:
     'Ray-sphere culled 3D tumbling objects (polyhedra, 3D hearts, crystals, torus rings) falling through perspective depth with ceramic, chrome, and frosted glass finishes.',
   mode: 'single',

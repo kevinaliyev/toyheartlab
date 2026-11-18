@@ -42,7 +42,7 @@ export function getWarmupRule(study) {
   return { delayMs: 1000, minElapsedSec: 0.8 };
 }
 
-export function captureCompositeThumbnail(canvases, maxWidth = 360) {
+export function captureCompositeThumbnail(canvases, maxWidth = 960) {
   const list = (Array.isArray(canvases) ? canvases : [canvases]).filter(
     (c) => c && c.width > 0 && c.height > 0
   );
@@ -56,10 +56,13 @@ export function captureCompositeThumbnail(canvases, maxWidth = 360) {
     tmp.width = tw;
     tmp.height = th;
     const ctx = tmp.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     for (const c of list) {
       ctx.drawImage(c, 0, 0, tw, th);
     }
-    return tmp.toDataURL('image/jpeg', 0.72);
+    const webp = tmp.toDataURL('image/webp', 0.90);
+    return webp.startsWith('data:image/webp') ? webp : tmp.toDataURL('image/png');
   } catch {
     return null;
   }
