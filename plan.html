@@ -308,6 +308,107 @@
         </ol>
       </div>
     </section>
+
+    <section>
+      <h2>7. Completed Milestones (Current State of <code>toyheartlab</code>)</h2>
+      <div class="grid">
+        <article class="card">
+          <span class="tag">Shaders &amp; Materials</span>
+          <h3>10 Procedural Shaders (2D &amp; 2.5D)</h3>
+          <ul>
+            <li><strong>2D Fullscreen Quad:</strong> <em>Watercolour (toyheart)</em> (luminous Beer-Lambert washes, wet-edge pooling, non-linear brush ordering, split tiny-heart period), <em>Charcoal Sketch (toyheart)</em> (dry laid-paper tooth, directional finger smudge, permanent staining, 4 paper tones), <em>Bubble Screen</em>, <em>Underwater Caustics</em>, <em>Fluid Advection</em>, <em>Seeded Fractal</em>, <em>Runway Zebra</em>, and <em>Noise Signal</em>.</li>
+            <li><strong>2.5D / Raymarched SDF (Z-Axis Quad):</strong> <em>Magnetic Ferrofluid</em> (isometric 3D SDF dish with liquid bridges &amp; Rosensweig spikes) and <em>Falling 3D Objects</em> (ray-sphere culled tumbling 3D shapes, AA silhouettes, Glossy / Liquid Chrome / Frosted Glass, 5 backdrops).</li>
+            <li><strong>Shared Shader Contracts:</strong> <code>src/shaders/studies.js</code> registry + <code>src/shaders/shader-params.js</code> (<code>colorSeedParam</code>, shared gradient GLSL, intuitive <code>u_colorSeed</code> mappings like obsidian → full liquid chrome, and <code>2D / 2.5D / True 3D</code> dropdown segregation).</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <span class="tag">Apps, HUD &amp; Tooling</span>
+          <h3>Home, Lab, Sandbox &amp; Toybox</h3>
+          <ul>
+            <li><strong>Navigation (<code>src/main.js</code>):</strong> <strong>Home</strong> (<code>#home</code>) 3-card hub (Lab, Sandbox, Toybox), <strong>Sandbox</strong> submenu (<code>#sandbox</code> → <code>#sandbox/&lt;id&gt;</code> auto-play), <strong>Toybox</strong> submenu (<code>#toybox</code>), and PRNG shader <code>#splash</code> (<code>R</code> reroll, <code>P</code> minimalist revert).</li>
+            <li><strong>Toybox Standalone Apps:</strong> <strong>01 Arena</strong> (2D gimmick ball battler with reactive shader backdrops &amp; WebAudio SFX) and <strong>02 Loop / GIF Studio</strong> (<code>gif-builder-app.js</code> + zero-dependency GIF89a encoder <code>gif-encoder.js</code> exporting <code>.gif</code>, <code>.webm</code>, <code>.webp</code> frames, and <code>.webp</code> spritesheets + <code>.atlas.json</code>).</li>
+            <li><strong>HUD &amp; Filters:</strong> Cross-shader <strong>Filters</strong> deck (<code>filter-controls.js</code>), lockable drag-and-drop HUD tab reordering (<code>hud-reorder.js</code>), standardized top-bar buttons, <code>20%</code> hidden HUD opacity with hover fade-in, and global <code>H</code> / <code>P</code> / <code>R</code> keybinds.</li>
+            <li><strong>Thumbnail Pipeline:</strong> Repo-committed <code>default-thumbnails.js</code> + <code>localStorage</code> override store (<code>thumbnail-store.js</code>) with wall-clock warmup, <code>16:9</code> letterboxing, WebP encoding, and File System Access API disk linking (<code>🔗</code> + <strong>Export Thumbnails</strong>).</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. Upcoming Roadmap — Modularity, Portable Assets &amp; True 3D</h2>
+      <div class="questions">
+        <ol>
+          <li><strong>Lab vs. Sandbox Overhaul:</strong> Formalize <strong>Lab</strong> as the strictly uninteractive shader/preset authoring tool and <strong>Sandbox</strong> as the interactive controller environment; bring Sandbox interactive shader controls into <strong>Loop / GIF Studio</strong> with loop-exclusive effects.</li>
+          <li><strong>Semi-Abstractable Modular Components:</strong> Generalize Arena's <code>GIMMICK_DEFS</code> pattern into 4 fast, native-speed module contracts — <em>Shader/Surface</em>, <em>Object Trait</em> (<code>onStep</code> / <code>onCollide</code>), <em>World Physics Rule</em>, and <em>Post/Feedback</em> — serialized into shareable JSON <strong>Cartridges</strong> (<code>#play=&lt;hash&gt;</code> with zero backend DB).</li>
+          <li><strong>Portable Developer Assets:</strong> Export zero-dependency <code>&lt;toyheart-canvas&gt;</code> <code>.mjs</code> web components, single-file portable <code>.html</code> cartridges, engine-ready <code>.frag</code> + <code>uniforms.json</code> packs (Three.js / Godot / PixiJS), and baked WebP/WebM spritesheets &amp; normal maps.</li>
+          <li><strong>True 3D Pipeline:</strong> Add a dedicated 3D mesh/scene renderer under the reserved <code>3D Shaders (True 3D)</code> dropdown category.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section>
+      <h2>9. Domain Architecture — Routing, Reverse Proxy &amp; Private Infra</h2>
+      <p>
+        As <code>toyheart</code> grows into a personal multi-service domain, keep <code>toyheartlab</code> as a pure static client app (zero server CPU, minimal egress) and route independent repositories behind a reverse proxy.
+      </p>
+
+      <pre># Multi-Repo Topology
+toyheart-site/      # Static root landing page (SEO, OpenGraph previews, links)
+toyheartlab/        # This repo — static WebGL Lab, Sandbox &amp; Toybox (zero backend)
+toyheart-archive/   # Peer-hosted Drive UI + Go/Rust Home-PC NAS agent + signaling API
+toyheart-infra/     # Private repo — Caddyfile, docker-compose.yml, Forward Auth, TURN</pre>
+
+      <div class="grid">
+        <article class="card">
+          <span class="tag">Routing &amp; Reverse Proxy</span>
+          <h3>Caddy / Nginx Subdomain Map</h3>
+          <ul>
+            <li><code>toyheart.domain</code> → Static portal (<code>toyheart-site</code>) for SEO &amp; link previews.</li>
+            <li><code>studio.toyheart.domain</code> (or <code>/studio/</code>) → <code>toyheartlab</code> served as cached static files (Cloudflare Pages or Caddy <code>file_server</code>).</li>
+            <li><code>archive.toyheart.domain</code> → Peer Drive web UI + WebSocket signaling endpoint.</li>
+            <li><code>private.toyheart.domain</code> → Personal tools &amp; admin dashboards.</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <span class="tag">Auth &amp; Containers</span>
+          <h3>Public vs. Private &amp; Deployment</h3>
+          <ul>
+            <li><strong>Proxy-Level Auth:</strong> Use <strong>Forward Auth</strong> (Authelia, Authentik, or Cloudflare Access) or a shared <code>.toyheart.domain</code> <code>HttpOnly</code> cookie so public tools stay frictionless while private routes are blocked before reaching apps.</li>
+            <li><strong>Container Strategy:</strong> Never containerize static sites (<code>toyheartlab</code>, <code>toyheart-site</code>). Use plain <code>systemd</code> for 1–2 Go/Rust binaries, or a single-VPS <strong>Docker Compose</strong> stack in <code>toyheart-infra</code> once running 3+ services (Caddy, Authelia, Archive signaling, <code>coturn</code>, DB).</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <h2>10. Project Archive — Peer-Hosted Cloud Drive &amp; Home-PC NAS</h2>
+      <p>
+        A lightweight Drive-style web interface where users host files from their own PCs via a small local agent, transferring data directly peer-to-peer so the VPS stores no bulk files and pays minimal egress.
+      </p>
+      <div class="grid">
+        <article class="card">
+          <span class="tag">System Components</span>
+          <h3>Control Plane + Local Agent + Browser</h3>
+          <ul>
+            <li><strong>VPS Control Plane:</strong> Handles accounts/auth, directory metadata, share links, and WebRTC signaling only.</li>
+            <li><strong>Home-PC Agent (Go / Rust):</strong> Runs in the system tray, watches a chosen folder, hashes files into content-addressed SHA-256 chunks (1–4 MB), and maintains an outbound WebSocket to the VPS (no router port-forwarding required).</li>
+            <li><strong>Browser P2P Transfer:</strong> Opening a share link establishes encrypted <strong>WebRTC DataChannels</strong> directly to the host PC (and any additional peers seeding chunks).</li>
+          </ul>
+        </article>
+
+        <article class="card">
+          <span class="tag">Logistics &amp; Edge Cases</span>
+          <h3>Engineering Considerations</h3>
+          <ul>
+            <li><strong>NAT Traversal:</strong> STUN handles ~80% of direct connections; include a small <code>coturn</code> TURN relay container for strict corporate/mobile NATs (or Tailscale/WireGuard for private-only circles).</li>
+            <li><strong>Large File Downloads:</strong> Stream incoming WebRTC chunks straight to disk with the File System Access API (<code>showSaveFilePicker</code> + <code>createWritable</code>) so multi-GB downloads don't exhaust browser RAM.</li>
+            <li><strong>Peer Availability:</strong> Display live host/seed online status in the web UI when a home PC is asleep or offline.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
   </main>
 </body>
 </html>
