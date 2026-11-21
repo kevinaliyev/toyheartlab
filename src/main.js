@@ -104,15 +104,10 @@ function teardownActiveApp() {
 }
 
 const HOME_SHADERS = [
-  () => import('./shaders/watercolor.js').then((m) => m.watercolorStudy),
-  () => import('./shaders/charcoal.js').then((m) => m.charcoalStudy),
-  () => import('./shaders/zebra-runway.js').then((m) => m.zebraRunwayStudy),
-  () => import('./shaders/fluid-advect.js').then((m) => m.fluidAdvectStudy),
   () => import('./shaders/fractal-prng.js').then((m) => m.fractalPrngStudy),
-  () => import('./shaders/noise-signal.js').then((m) => m.noiseSignalStudy),
-  () => import('./shaders/bubble-screen.js').then((m) => m.bubbleScreenStudy),
-  () => import('./shaders/underwater.js').then((m) => m.underwaterStudy),
-  () => import('./shaders/falling-objects.js').then((m) => m.fallingObjectsStudy),
+  () => import('./shaders/zebra-runway.js').then((m) => m.zebraRunwayStudy),
+  () => import('./shaders/charcoal.js').then((m) => m.charcoalStudy),
+  () => import('./shaders/fluid-advect.js').then((m) => m.fluidAdvectStudy),
 ];
 
 async function renderSplash(token) {
