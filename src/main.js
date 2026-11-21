@@ -348,13 +348,13 @@ async function handleRoute() {
 
   teardownActiveApp();
 
-  if (!hash || hash === 'home') {
-    renderHomeMenu();
+  if (!hash || hash === 'splash') {
+    renderSplash(token);
     return;
   }
 
-  if (hash === 'splash') {
-    renderSplash(token);
+  if (hash === 'home') {
+    renderHomeMenu();
     return;
   }
 
